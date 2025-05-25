@@ -341,7 +341,7 @@ const App = () => {
   // If no data, show file upload screen
   if (!data) {
     return (
-      <div className="flex">
+      <div className="flex ">
         <div className="sidebar">
           <img src={scm_log} width={170} alt="logo" className="mb-5 pl-3" />
           <ul>
@@ -362,12 +362,12 @@ const App = () => {
             ))}
           </ul>
         </div>
-        <div className="content flex-1">
-          <div className="header bg-gradient-to-r from-blue-900 to-blue-500 text-white p-6 rounded-t-lg text-center">
+        <div className="content flex-1 ">
+          <div className="header bg-gradient-to-r from-blue-900 to-blue-500 text-white p-6 rounded-t-lg text-center ">
             <h1 className="text-4xl font-bold">Sales Report</h1>
-            <p className="text-lg mt-2">Report Date: May 25, 2025, 10:47 PM</p>
+            <p className="text-lg mt-2">Report Date: May 25, 2025, 11:09 PM</p>
           </div>
-          <div className="upload-section bg-white p-6 rounded-b-lg shadow-lg mb-8 text-center">
+          <div className="upload-section bg-white p-6 rounded-b-lg shadow-lg mb-8 text-center border border-gray-300">
             <h2 className="text-2xl font-semibold text-blue-700 mb-4">
               Upload File to View Report
             </h2>
@@ -521,6 +521,40 @@ const App = () => {
       ? productData[0]
       : { name: "N/A", quantity: 0 };
 
+  // Calculate summaries for each menu
+  const summaryData = {
+    "Sales by Customer": {
+      total: customerAll.reduce((sum, item) => sum + item.amount, 0).toFixed(2),
+      count: customerAll.length,
+      icon: <FaUsers size={30} className="text-blue-600" />,
+      bgColor: "bg-blue-100",
+    },
+    "Quantity Sold by Product": {
+      total: productAll.reduce((sum, item) => sum + item.quantity, 0),
+      count: productAll.length,
+      icon: <FaBox size={30} className="text-green-600" />,
+      bgColor: "bg-green-100",
+    },
+    "Products Promotion": {
+      total: pProductAll.reduce((sum, item) => sum + item.quantity, 0),
+      count: pProductAll.length,
+      icon: <FaTags size={30} className="text-orange-600" />,
+      bgColor: "bg-orange-100",
+    },
+    "Sales by Branch": {
+      total: branchAll.reduce((sum, item) => sum + item.amount, 0).toFixed(2),
+      count: branchAll.length,
+      icon: <FaBuilding size={30} className="text-purple-600" />,
+      bgColor: "bg-purple-100",
+    },
+    "Sales by Stockiest Branch": {
+      total: stockiestBranchAll.reduce((sum, item) => sum + item.amount, 0).toFixed(2),
+      count: stockiestBranchAll.length,
+      icon: <FaWarehouse size={30} className="text-teal-600" />,
+      bgColor: "bg-teal-100",
+    },
+  };
+
   // Render content based on selected menu
   const renderContent = () => {
     let filteredDataGraph = [];
@@ -528,7 +562,7 @@ const App = () => {
     switch (selectedMenu) {
       case "Summary":
         return (
-          <div className="summary-section bg-white p-6 rounded-lg shadow-lg">
+          <div className="summary-section bg-white p-6 rounded-lg shadow-lg border border-gray-300">
             <div className="flex justify-between mb-4">
               <h2 className="text-2xl font-semibold text-blue-700">Summary</h2>
               <div>
@@ -545,6 +579,23 @@ const App = () => {
                   className="mr-2 p-2 border rounded"
                 />
               </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
+              {Object.entries(summaryData).map(([menu, { total, count, icon, bgColor }]) => (
+                <div
+                  key={menu}
+                  className={`p-6 rounded-lg shadow-md ${bgColor} flex items-center space-x-4 transform transition-transform hover:scale-105 hover:shadow-lg`}
+                >
+                  <div>{icon}</div>
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-800">{menu}</h3>
+                    <p className="text-gray-600">
+                      {menu.includes("Sales") ? `Total Sales: $ ${total} USD` : `Total Quantity: ${total} units`}
+                    </p>
+                    <p className="text-gray-600">Items: {count}</p>
+                  </div>
+                </div>
+              ))}
             </div>
             <p className="text-lg">
               <strong>Total Sales:</strong> $ {totalSales} USD
@@ -995,7 +1046,7 @@ const App = () => {
             </div>
           </div>
         </div>
-        <div className="upload-section bg-white p-6 rounded-b-lg shadow-lg mb-8 text-center flex gap-4">
+        <div className="upload-section bg-white p-6 rounded-b-lg shadow-lg mb-8 text-center flex gap-4 border border-gray-300">
           <div className="flex justify-center items-center gap-1">
             <FaFileExcel size={35} className="text-green-700" />
             <input
