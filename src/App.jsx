@@ -91,6 +91,7 @@ const App = () => {
         );
         const requiredColumns = [
           "memberLocalName",
+          "memberId",
           "totalAmount",
           "orderCount",
           "productName",
@@ -206,6 +207,7 @@ const App = () => {
       const totalAmount = parseFloat(row["totalAmount"]) || 0;
       const orderCount = parseInt(row["orderCount"]) || 0;
       const customer = row["memberLocalName"];
+      const memberId = row["memberId"] || "N/A";
       const product = row["productName"] || "Unknown";
       const branch = row["branchTransactionCode"];
       const branchReceive = row["branchReceiveCode"] || "N/A";
@@ -217,9 +219,17 @@ const App = () => {
       purchaseCodes.add(purchaseCode);
 
       if (totalAmount > 0 && !purchaseChannel.startsWith("STOCKIEST")) {
-        if (!salesByCustomer[customer])
-          salesByCustomer[customer] = { amount: 0, date: purchaseDate, memberId: "N/A" };
+        if (!salesByCustomer[customer]) {
+          salesByCustomer[customer] = {
+            amount: 0,
+            date: purchaseDate,
+            memberIds: new Set(),
+          };
+        }
         salesByCustomer[customer].amount += totalAmount;
+        if (memberId !== "N/A") {
+          salesByCustomer[customer].memberIds.add(memberId);
+        }
       }
       if (
         orderCount > 0 &&
@@ -355,7 +365,7 @@ const App = () => {
         <div className="content flex-1">
           <div className="header bg-gradient-to-r from-blue-900 to-blue-500 text-white p-6 rounded-t-lg text-center">
             <h1 className="text-4xl font-bold">Sales Report</h1>
-            <p className="text-lg mt-2">Report Date: May 25, 2025, 09:52 PM</p>
+            <p className="text-lg mt-2">Report Date: May 25, 2025, 10:47 PM</p>
           </div>
           <div className="upload-section bg-white p-6 rounded-b-lg shadow-lg mb-8 text-center">
             <h2 className="text-2xl font-semibold text-blue-700 mb-4">
@@ -391,7 +401,28 @@ const App = () => {
   // Transform data for charts and tables
   const customerData = data
     ? Object.entries(data.salesByCustomer)
-      .map(([name, { amount, date, memberId }]) => ({ name, amount, date, memberId }))
+      .map(([name, { amount, date, memberIds }]) => {
+        const memberIdArray = Array.from(memberIds);
+        let memberId = "N/A";
+        let stockiestId = "N/A";
+
+        // Check for memberIds with letters and without letters
+        memberIdArray.forEach((id) => {
+          if (/[A-Za-z]/.test(id) && stockiestId === "N/A") {
+            stockiestId = id; // Assign ID with letters to stockiestId
+          } else if (!/[A-Za-z]/.test(id) && memberId === "N/A") {
+            memberId = id; // Assign ID without letters to memberId
+          }
+        });
+
+        return {
+          name,
+          amount,
+          date,
+          memberId,
+          stockiestId,
+        };
+      })
       .sort((a, b) => b.amount - a.amount)
     : [];
   const productData = data
@@ -593,6 +624,7 @@ const App = () => {
                     <thead>
                       <tr>
                         <th>Member ID</th>
+                        <th>Stockiest ID</th>
                         <th>Customer</th>
                         <th>Sales (USD)</th>
                       </tr>
@@ -601,6 +633,7 @@ const App = () => {
                       {filteredDataTable.map((item) => (
                         <tr key={item.name}>
                           <td>{item.memberId}</td>
+                          <td>{item.stockiestId}</td>
                           <td>{item.name}</td>
                           <td>{item.amount.toFixed(2)}</td>
                         </tr>
