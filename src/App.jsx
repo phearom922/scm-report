@@ -28,7 +28,6 @@ const App = () => {
   const [fileName, setFileName] = useState("");
   const [dateRange, setDateRange] = useState({ start: null, end: null });
 
-  // Load data from Local Storage on app start
   useEffect(() => {
     const storedData = localStorage.getItem("salesData");
     if (storedData) {
@@ -47,7 +46,6 @@ const App = () => {
     }
   }, []);
 
-  // Sidebar menu items
   const menuItems = [
     "Summary",
     "Sales by Customer",
@@ -57,7 +55,6 @@ const App = () => {
     "Sales by Stockiest Branch",
   ];
 
-  // Handle Excel and CSV file upload
   const handleFileUpload = (event) => {
     const file = event.target.files[0];
     if (!file) return;
@@ -101,6 +98,7 @@ const App = () => {
           "purchaseDate",
           "purchaseCode",
           "purchaseChannel",
+          "totalThisPrice",
         ];
         const missingColumns = requiredColumns.filter(
           (col) => !headers.includes(col)
@@ -120,7 +118,6 @@ const App = () => {
 
         const cleanedData = processAndCleanData(dataRows);
 
-        // Calculate date range from purchaseDate
         const purchaseDates = dataRows
           .map((row) => row["purchaseDate"])
           .filter(
@@ -165,7 +162,6 @@ const App = () => {
     }
   };
 
-  // Function to clear Local Storage
   const clearLocalStorage = () => {
     localStorage.removeItem("salesData");
     setData(null);
@@ -178,7 +174,6 @@ const App = () => {
     setDateRange({ start: null, end: null });
   };
 
-  // Parse CSV data
   const parseCSV = (csvText) => {
     const rows = csvText.split(/\r?\n/);
     return rows.map((row) =>
@@ -186,12 +181,11 @@ const App = () => {
     );
   };
 
-  // Process and clean data
   const processAndCleanData = (rawData) => {
     const salesByCustomer = {};
     const quantityByProduct = {};
     const salesByBranch = {};
-    const salesByBranchDaily = {}; // For daily sales trend
+    const salesByBranchDaily = {};
     const quantityPProducts = {};
     let totalQuantityPProducts = 0;
     const purchaseCodes = new Set();
@@ -205,6 +199,7 @@ const App = () => {
         return;
 
       const totalAmount = parseFloat(row["totalAmount"]) || 0;
+      const totalThisPrice = parseFloat(row["totalThisPrice"]) || 0;
       const orderCount = parseInt(row["orderCount"]) || 0;
       const customer = row["memberLocalName"];
       const memberId = row["memberId"] || "N/A";
@@ -237,18 +232,24 @@ const App = () => {
         !productCode.startsWith("P") &&
         !branchReceive.startsWith("KS")
       ) {
-        if (!quantityByProduct[product])
-          quantityByProduct[product] = { quantity: 0, date: purchaseDate, productId: productCode };
+        if (!quantityByProduct[product]) {
+          quantityByProduct[product] = { 
+            quantity: 0, 
+            totalPrice: 0,
+            date: purchaseDate, 
+            productId: productCode 
+          };
+        }
         quantityByProduct[product].quantity += orderCount;
+        quantityByProduct[product].totalPrice += totalThisPrice;
       }
       if (totalAmount > 0) {
         if (!salesByBranch[branch])
           salesByBranch[branch] = { amount: 0, date: purchaseDate };
         salesByBranch[branch].amount += totalAmount;
 
-        // For daily sales trend
         if (purchaseDate !== "N/A" && !isNaN(new Date(purchaseDate).getTime())) {
-          const dateKey = new Date(purchaseDate).toISOString().split("T")[0]; // Format as YYYY-MM-DD
+          const dateKey = new Date(purchaseDate).toISOString().split("T")[0];
           if (!salesByBranchDaily[branch]) {
             salesByBranchDaily[branch] = {};
           }
@@ -259,14 +260,20 @@ const App = () => {
         }
       }
       if (orderCount > 0 && productCode.startsWith("P")) {
-        if (!quantityPProducts[product])
-          quantityPProducts[product] = { quantity: 0, date: purchaseDate, productId: productCode };
+        if (!quantityPProducts[product]) {
+          quantityPProducts[product] = { 
+            quantity: 0, 
+            totalPrice: 0,
+            date: purchaseDate, 
+            productId: productCode 
+          };
+        }
         quantityPProducts[product].quantity += orderCount;
+        quantityPProducts[product].totalPrice += totalThisPrice;
         totalQuantityPProducts += orderCount;
       }
     });
 
-    // Transform salesByBranchDaily for chart
     const dailySalesData = [];
     const allDates = new Set();
     Object.values(salesByBranchDaily).forEach((branchData) => {
@@ -293,7 +300,6 @@ const App = () => {
     };
   };
 
-  // Filter data by date
   const filterByDate = (dataArray, start, end) => {
     if (!start || !end || !dataArray) return dataArray || [];
     return dataArray.filter((item) => {
@@ -305,7 +311,6 @@ const App = () => {
     });
   };
 
-  // Filter data by search query
   const filterBySearch = (dataArray, query) => {
     if (!query || !dataArray) return dataArray || [];
     const searchField = dataArray[0]?.branch ? "branch" : "name";
@@ -314,14 +319,12 @@ const App = () => {
     );
   };
 
-  // Format date for display
   const formatDateForDisplay = (dateString) => {
     if (dateString === "N/A") return "N/A";
     const date = new Date(dateString);
-    return date.toISOString().split("T")[0]; // Display as YYYY-MM-DD
+    return date.toISOString().split("T")[0];
   };
 
-  // Format date range for display
   const formatDateRange = (range) => {
     if (
       !range.start ||
@@ -338,10 +341,9 @@ const App = () => {
     return `${start} - ${end}`;
   };
 
-  // If no data, show file upload screen
   if (!data) {
     return (
-      <div className="flex ">
+      <div className="flex">
         <div className="sidebar">
           <img src={scm_log} width={170} alt="logo" className="mb-5 pl-3" />
           <ul>
@@ -362,16 +364,15 @@ const App = () => {
             ))}
           </ul>
         </div>
-        <div className="content flex-1 ">
-          <div className="header bg-gradient-to-r from-blue-900 to-blue-500 text-white p-6 rounded-t-lg text-center ">
+        <div className="content flex-1">
+          <div className="header bg-gradient-to-r from-blue-900 to-blue-500 text-white p-6 rounded-t-lg text-center">
             <h1 className="text-4xl font-bold">Sales Report</h1>
-            <p className="text-lg mt-2">Report Date: May 25, 2025, 11:09 PM</p>
           </div>
           <div className="upload-section bg-white p-6 rounded-b-lg shadow-lg mb-8 text-center border border-gray-300">
             <h2 className="text-2xl font-semibold text-blue-700 mb-4">
               Upload File to View Report
             </h2>
-            <div className="flex justify-between items-center border-2 p-10 rounded-md  border-dotted border-gray-500">
+            <div className="flex justify-between items-center border-2 p-10 rounded-md border-dotted border-gray-500">
               <div className="flex justify-center items-center gap-1">
                 <FaFileExcel size={35} className="text-green-700" />
                 <input
@@ -398,7 +399,6 @@ const App = () => {
     );
   }
 
-  // Transform data for charts and tables
   const customerData = data
     ? Object.entries(data.salesByCustomer)
       .map(([name, { amount, date, memberIds }]) => {
@@ -406,12 +406,11 @@ const App = () => {
         let memberId = "N/A";
         let stockiestId = "N/A";
 
-        // Check for memberIds with letters and without letters
         memberIdArray.forEach((id) => {
           if (/[A-Za-z]/.test(id) && stockiestId === "N/A") {
-            stockiestId = id; // Assign ID with letters to stockiestId
+            stockiestId = id;
           } else if (!/[A-Za-z]/.test(id) && memberId === "N/A") {
-            memberId = id; // Assign ID without letters to memberId
+            memberId = id;
           }
         });
 
@@ -427,12 +426,24 @@ const App = () => {
     : [];
   const productData = data
     ? Object.entries(data.quantityByProduct)
-      .map(([name, { quantity, date, productId }]) => ({ name, quantity, date, productId }))
+      .map(([name, { quantity, totalPrice, date, productId }]) => ({ 
+        name, 
+        quantity, 
+        totalPrice: totalPrice.toFixed(2),
+        date, 
+        productId 
+      }))
       .sort((a, b) => b.quantity - a.quantity)
     : [];
   const pProductData = data
     ? Object.entries(data.quantityPProducts)
-      .map(([name, { quantity, date, productId }]) => ({ name, quantity, date, productId }))
+      .map(([name, { quantity, totalPrice, date, productId }]) => ({ 
+        name, 
+        quantity, 
+        totalPrice: totalPrice.toFixed(2),
+        date, 
+        productId 
+      }))
       .sort((a, b) => b.quantity - a.quantity)
     : [];
   const branchData = data
@@ -521,7 +532,6 @@ const App = () => {
       ? productData[0]
       : { name: "N/A", quantity: 0 };
 
-  // Calculate summaries for each menu
   const summaryData = {
     "Sales by Customer": {
       total: customerAll.reduce((sum, item) => sum + item.amount, 0).toFixed(2),
@@ -555,7 +565,6 @@ const App = () => {
     },
   };
 
-  // Render content based on selected menu
   const renderContent = () => {
     let filteredDataGraph = [];
     let filteredDataTable = [];
@@ -565,20 +574,6 @@ const App = () => {
           <div className="summary-section bg-white p-6 rounded-lg shadow-lg border border-gray-300">
             <div className="flex justify-between mb-4">
               <h2 className="text-2xl font-semibold text-blue-700">Summary</h2>
-              <div>
-                <input
-                  type="date"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                  className="mr-2 p-2 border rounded"
-                />
-                <input
-                  type="date"
-                  value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
-                  className="mr-2 p-2 border rounded"
-                />
-              </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
               {Object.entries(summaryData).map(([menu, { total, count, icon, bgColor }]) => (
@@ -590,40 +585,21 @@ const App = () => {
                   <div>
                     <h3 className="text-lg font-semibold text-gray-800">{menu}</h3>
                     <p className="text-gray-600">
-                      {menu.includes("Sales") ? `Total Sales: $ ${total} USD` : `Total Quantity: ${total} units`}
+                      {menu.includes("Sales") ? `Total Sales: $ ${total} USD` :
+                        menu === "Products Promotion" ? `Total Quantity: ${total} Sets` :
+                          `Total Quantity: ${total} units`}
                     </p>
-                    <p className="text-gray-600">Items: {count}</p>
+                    <p className="text-gray-600">
+                      {menu === "Sales by Customer" ? "Member Counts :" :
+                        menu === "Quantity Sold by Product" ? "Product Items :" :
+                          menu === "Products Promotion" ? "Product Codes :" :
+                            menu === "Sales by Branch" ? "Branch :" :
+                              menu === "Sales by Stockiest Branch" ? "Stockiests :" : "Items :"} {count}
+                    </p>
                   </div>
                 </div>
               ))}
             </div>
-            <p className="text-lg">
-              <strong>Total Sales:</strong> $ {totalSales} USD
-            </p>
-            <p className="text-lg">
-              <strong>Number of Purchases:</strong>{" "}
-              {data ? data.purchaseCount : 0}
-            </p>
-            <p className="text-lg">
-              <strong>Quantity of Products Starting with P:</strong>{" "}
-              {data ? data.totalQuantityPProducts : 0} units
-            </p>
-            <p className="text-lg">
-              <strong>Interesting Fact:</strong> The best-selling product is "
-              {topProduct.name}" with {topProduct.quantity} units sold,
-              indicating high popularity.
-            </p>
-            <p className="text-lg">
-              Sales data for May 24, 2025, shows strong performance across
-              multiple branches, with significant contributions from major
-              customers and top products. The best-selling product is "
-              {topProduct.name}", indicating high popularity, possibly due to
-              high PV value or special promotions. Products starting with "P"
-              have a total sales quantity of{" "}
-              {data ? data.totalQuantityPProducts : 0} units, highlighting their
-              importance in the product category. Branches such as PNH01 and
-              KS003 have high sales, indicating key market areas.
-            </p>
           </div>
         );
       case "Sales by Customer":
@@ -736,7 +712,10 @@ const App = () => {
                   }}
                   fontSize={12}
                 />
-                <Tooltip />
+                <Tooltip formatter={(value) => {
+                  const numericValue = typeof value === 'number' ? value : parseInt(value) || 0;
+                  return numericValue;
+                }} />
                 <Legend />
                 <Bar dataKey="quantity" fill="#10B981" name="Quantity" />
               </BarChart>
@@ -750,6 +729,7 @@ const App = () => {
                         <th>Product ID</th>
                         <th>Product</th>
                         <th>Quantity</th>
+                        <th>Total Price (USD)</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -758,6 +738,7 @@ const App = () => {
                           <td>{item.productId}</td>
                           <td>{item.name}</td>
                           <td>{item.quantity}</td>
+                          <td>{item.totalPrice}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -807,7 +788,10 @@ const App = () => {
                   }}
                   fontSize={12}
                 />
-                <Tooltip />
+                <Tooltip formatter={(value) => {
+                  const numericValue = typeof value === 'number' ? value : parseInt(value) || 0;
+                  return numericValue;
+                }} />
                 <Legend />
                 <Bar dataKey="quantity" fill="#F97316" name="Quantity" />
               </BarChart>
@@ -821,6 +805,7 @@ const App = () => {
                         <th>Product ID</th>
                         <th>Product</th>
                         <th>Quantity</th>
+                        <th>Total Price (USD)</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -829,6 +814,7 @@ const App = () => {
                           <td>{item.productId}</td>
                           <td>{item.name}</td>
                           <td>{item.quantity}</td>
+                          <td>{item.totalPrice}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -845,7 +831,6 @@ const App = () => {
         filteredDataGraph = data.salesByBranchDaily;
         filteredDataTable = branchAll;
 
-        // Filter branches for PNH01 and KCM01
         const filteredGraphData = filterByDate(
           filterBySearch(
             filteredDataGraph.map((item) => {
@@ -945,18 +930,6 @@ const App = () => {
               </h2>
               <div>
                 <input
-                  type="date"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                  className="mr-2 p-2 border rounded"
-                />
-                <input
-                  type="date"
-                  value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
-                  className="mr-2 p-2 border rounded"
-                />
-                <input
                   type="text"
                   placeholder="Search branches..."
                   value={searchQuery}
@@ -990,7 +963,6 @@ const App = () => {
                     <tr>
                       <th>Branch</th>
                       <th>Sales (USD)</th>
-                      <th>Date</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -998,7 +970,6 @@ const App = () => {
                       <tr key={item.branch}>
                         <td>{item.branch}</td>
                         <td>{item.amount.toFixed(2)}</td>
-                        <td>{formatDateForDisplay(item.date)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -1035,33 +1006,34 @@ const App = () => {
         </ul>
       </div>
       <div className="content flex-1">
-        <div className="header bg-gradient-to-r from-blue-900 to-blue-500 text-white p-6 rounded-t-lg text-center space-y-2">
-          <h1 className="text-5xl font-bold">Sales Report</h1>
-          <div className="text-lg flex space-y-1 justify-center gap-2">
-            <div>
-              <strong>File Name :</strong> {fileName || "N/A"} |{" "}
+        <div className="upload-section bg-white p-6 rounded-lg shadow-lg mb-8 text-center justify-between flex gap-4 border border-gray-300">
+          <div className="flex gap-2">
+            <div className="flex justify-center items-center gap-1">
+              <FaFileExcel size={35} className="text-green-700" />
+              <input
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                className="upload-btn px-4 py-2 2/12 border border-green-700 text-green-700 rounded hover:bg-green-700 cursor-pointer hover:text-white"
+                onChange={handleFileUpload}
+              />
             </div>
-            <div>
-              <strong>Date Range:</strong> {formatDateRange(dateRange)}
+            <button
+              onClick={clearLocalStorage}
+              className="clear-btn px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 cursor-pointer"
+            >
+              Clear Data
+            </button>
+          </div>
+          <div className="header bg-gradient-to-r from-blue-900 to-blue-500 text-white rounded text-center space-y-2">
+            <div className="text flex space-y-1 justify-center gap-2 p-2">
+              <div>
+                <strong>File Name :</strong> {fileName || "N/A"} |{" "}
+              </div>
+              <div>
+                <strong>Date Range:</strong> {formatDateRange(dateRange)}
+              </div>
             </div>
           </div>
-        </div>
-        <div className="upload-section bg-white p-6 rounded-b-lg shadow-lg mb-8 text-center flex gap-4 border border-gray-300">
-          <div className="flex justify-center items-center gap-1">
-            <FaFileExcel size={35} className="text-green-700" />
-            <input
-              type="file"
-              accept=".xlsx,.xls,.csv"
-              className="upload-btn px-4 py-2 2/12 border border-green-700 text-green-700 rounded hover:bg-green-700 cursor-pointer hover:text-white"
-              onChange={handleFileUpload}
-            />
-          </div>
-          <button
-            onClick={clearLocalStorage}
-            className="clear-btn px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 cursor-pointer"
-          >
-            Clear Data
-          </button>
         </div>
         {renderContent()}
       </div>
