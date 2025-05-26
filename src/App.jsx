@@ -393,23 +393,24 @@ const App = () => {
           </ul>
         </div>
         <div className="content flex-1">
-          <div className="header bg-gradient-to-r from-blue-900 to-blue-500 text-white p-6 rounded-t-lg text-center">
+          <div className="header bg-gradient-to-r from-green-700 to-green-500 text-white p-6 rounded-t-lg text-center">
             <h1 className="text-4xl font-bold">Sales Report</h1>
           </div>
           <div className="upload-section bg-white p-6 rounded-b-lg shadow-lg mb-8 text-center border border-gray-300">
-            <h2 className="text-2xl font-semibold text-blue-700 mb-4">
+            <h2 className="text-2xl font-semibold text-green-700 mb-4">
               Upload File to View Report
             </h2>
             <div className="flex justify-between items-center border-2 p-10 rounded-md border-dotted border-gray-500">
-              <div className="flex justify-center items-center gap-1">
-                <FaFileExcel size={35} className="text-green-700" />
+              <label className="flex justify-center items-center gap-1 hover:cursor-pointer ">
+                <FaFileExcel size={36} className="text-green-700" />
+                <p className="font-kantumruy text-xl border border-green-700 py-1 px-3 transition-all duration-200 rounded hover:bg-green-700 tra hover:text-white text-green-700 font-medium">ចុចត្រង់នេះដើម្បី​ Upload File</p>
                 <input
                   type="file"
                   accept=".xlsx,.xls,.csv"
-                  className="upload-btn px-4 py-2 2/12 border border-green-700 text-green-700 rounded hover:bg-green-700 cursor-pointer hover:text-white"
+                  className="upload-btn px-4 hidden py-2 2/12 border border-green-700 rounded text-green-700 cursor-pointer hover:text-white"
                   onChange={handleFileUpload}
                 />
-              </div>
+              </label>
               <div className="flex justify-center items-center gap-2 text-gray-600">
                 <FaFileCsv size={25} />
                 <FaFileExcel size={25} /> <FaFileAlt size={25} />
@@ -610,7 +611,7 @@ const App = () => {
         return (
           <div className="summary-section bg-white p-6 rounded-lg shadow-lg border border-gray-300">
             <div className="flex justify-between mb-4">
-              <h2 className="text-2xl font-semibold text-blue-700">Summary</h2>
+              <h2 className="text-2xl font-semibold text-gray-700">Summary</h2>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
               {Object.entries(summaryData).map(([menu, { total, count, purchaseTypeCounts, icon, bgColor }]) => (
@@ -661,7 +662,7 @@ const App = () => {
         return (
           <div className="section bg-white p-6 rounded-lg shadow-lg mb-8 border border-gray-300">
             <div className="flex justify-between mb-4">
-              <h2 className="text-2xl font-semibold text-gray-800">
+              <h2 className="text-2xl font-semibold text-gray-700">
                 Sales by Customer : Top 10
               </h2>
               <div>
@@ -701,7 +702,7 @@ const App = () => {
               <div>
                 <div className="scroll-table">
                   <table>
-                    <thead>
+                    <thead className="customer">
                       <tr>
                         <th>Member ID</th>
                         <th>Stockiest ID</th>
@@ -734,7 +735,7 @@ const App = () => {
         return (
           <div className="section bg-white p-6 rounded-lg shadow-lg mb-8 border border-gray-300">
             <div className="flex justify-between mb-4">
-              <h2 className="text-2xl font-semibold text-gray-800">
+              <h2 className="text-2xl font-semibold text-gray-700">
                 Quantity Sold by Product : Top 10 <span className="text-red-600">(Not including promotions)</span>
               </h2>
               <div>
@@ -777,7 +778,7 @@ const App = () => {
               <div>
                 <div className="scroll-table">
                   <table>
-                    <thead>
+                    <thead className="sold-product">
                       <tr>
                         <th>Product ID</th>
                         <th>Product</th>
@@ -810,7 +811,7 @@ const App = () => {
         return (
           <div className="section bg-white p-6 rounded-lg shadow-lg mb-8 border border-gray-300">
             <div className="flex justify-between mb-4">
-              <h2 className="text-2xl font-semibold text-gray-800">
+              <h2 className="text-2xl font-semibold text-gray-700">
                 Quantity of Products Promotion Top 5
               </h2>
               <div>
@@ -853,7 +854,7 @@ const App = () => {
               <div>
                 <div className="scroll-table">
                   <table>
-                    <thead>
+                    <thead className="promotion">
                       <tr>
                         <th>Product ID</th>
                         <th>Product</th>
@@ -907,7 +908,7 @@ const App = () => {
         return (
           <div className="section bg-white p-6 rounded-lg shadow-lg mb-8 border border-gray-300">
             <div className="flex justify-between mb-4">
-              <h2 className="text-2xl font-semibold text-gray-800">
+              <h2 className="text-2xl font-semibold text-gray-700">
                 Daily Sales Trend by Branch
               </h2>
               <div>
@@ -953,7 +954,7 @@ const App = () => {
             {branchData.length > 0 && (
               <div className="scroll-table">
                 <table>
-                  <thead>
+                  <thead className="branch">
                     <tr>
                       <th>Branch</th>
                       <th>Sales (USD)</th>
@@ -978,7 +979,7 @@ const App = () => {
         return (
           <div className="section bg-white p-6 rounded-lg shadow-lg mb-8 border border-gray-300">
             <div className="flex justify-between mb-4">
-              <h2 className="text-2xl font-semibold text-gray-800">
+              <h2 className="text-2xl font-semibold text-gray-700">
                 Sales by Stockiest Branch
               </h2>
               <div>
@@ -1012,7 +1013,7 @@ const App = () => {
             {branchData.length > 0 && (
               <div className="scroll-table">
                 <table>
-                  <thead>
+                  <thead className="stockiest">
                     <tr>
                       <th>Branch</th>
                       <th>Sales (USD)</th>
@@ -1062,13 +1063,16 @@ const App = () => {
         <div className="upload-section bg-white p-6 rounded-lg shadow-lg mb-8 text-center justify-between flex gap-4 border border-gray-300">
           <div className="flex gap-2">
             <div className="flex justify-center items-center gap-1">
-              <FaFileExcel size={35} className="text-green-700" />
-              <input
-                type="file"
-                accept=".xlsx,.xls,.csv"
-                className="upload-btn px-4 py-2 2/12 border border-green-700 text-green-700 rounded hover:bg-green-700 cursor-pointer hover:text-white"
-                onChange={handleFileUpload}
-              />
+              <label className="flex justify-center items-center gap-1 hover:cursor-pointer ">
+                <FaFileExcel size={36} className="text-green-700" />
+                <p className="font-kantumruy text-xl border border-green-700 py-1 px-3 transition-all duration-200 rounded hover:bg-green-700 tra hover:text-white text-green-700 font-medium">ចុចត្រង់នេះដើម្បី​ Upload File</p>
+                <input
+                  type="file"
+                  accept=".xlsx,.xls,.csv"
+                  className="upload-btn px-4 hidden py-2 2/12 border border-green-700 rounded text-green-700 cursor-pointer hover:text-white"
+                  onChange={handleFileUpload}
+                />
+              </label>
             </div>
             <button
               onClick={clearLocalStorage}
@@ -1077,7 +1081,7 @@ const App = () => {
               Clear Data
             </button>
           </div>
-          <div className="header bg-gradient-to-r from-blue-900 to-blue-500 text-[14px] p-2 text-white rounded flex items-center justify-center ">
+          <div className="header bg-gradient-to-r from-green-700 to-green-500 text-[14px] py-2 px-4 text-white rounded flex items-center justify-center ">
             <div className="flex gap-2">
               <div>
                 <strong>File Name :</strong> {fileName || "N/A"} |{" "}
