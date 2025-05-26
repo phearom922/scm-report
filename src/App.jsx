@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { FaFileExcel, FaFileCsv, FaFileAlt } from "react-icons/fa";
-import { FaChartPie, FaUsers, FaBox, FaTags, FaBuilding, FaWarehouse } from "react-icons/fa";
+import { FaChartPie, FaUsers, FaBox, FaTags, FaBuilding, FaWarehouse, FaFileInvoice } from "react-icons/fa";
 import scm_log from "/SCM-Logo.png";
+import how_to from "/how_to_upoad_file-01.png";
 
 import {
   ResponsiveContainer,
@@ -98,6 +99,7 @@ const App = () => {
           "purchaseDate",
           "purchaseCode",
           "purchaseChannel",
+          "purchaseType",
           "totalThisPrice",
         ];
         const missingColumns = requiredColumns.filter(
@@ -189,8 +191,11 @@ const App = () => {
     const quantityPProducts = {};
     let totalQuantityPProducts = 0;
     const purchaseCodes = new Set();
+    const nonStockiestPurchaseCodes = new Set();
+    const purchaseTypeBreakdown = {};
 
     rawData.forEach((row) => {
+      // เงื่อนไขสำหรับส่วนอื่นๆ (ยังคงเหมือนเดิม)
       if (
         !row["memberLocalName"] ||
         !row["branchTransactionCode"] ||
@@ -210,9 +215,24 @@ const App = () => {
       const purchaseDate = row["purchaseDate"] || "N/A";
       const purchaseCode = row["purchaseCode"];
       const purchaseChannel = row["purchaseChannel"] || "N/A";
+      const purchaseType = row["purchaseType"] || "Unknown";
 
       purchaseCodes.add(purchaseCode);
 
+      // เงื่อนไขสำหรับ Total Purchase Bills (ใช้แค่ 2 เงื่อนไข)
+      if (row["purchaseCode"]) { // ตรวจสอบเฉพาะว่ามี purchaseCode
+        if (!purchaseChannel.startsWith("STOCKIEST")) {
+          nonStockiestPurchaseCodes.add(purchaseCode);
+
+          // นับตาม purchaseType
+          if (!purchaseTypeBreakdown[purchaseType]) {
+            purchaseTypeBreakdown[purchaseType] = new Set();
+          }
+          purchaseTypeBreakdown[purchaseType].add(purchaseCode);
+        }
+      }
+
+      // ส่วนอื่นๆ ยังคงใช้เงื่อนไขเดิม
       if (totalAmount > 0 && !purchaseChannel.startsWith("STOCKIEST")) {
         if (!salesByCustomer[customer]) {
           salesByCustomer[customer] = {
@@ -233,11 +253,11 @@ const App = () => {
         !branchReceive.startsWith("KS")
       ) {
         if (!quantityByProduct[product]) {
-          quantityByProduct[product] = { 
-            quantity: 0, 
+          quantityByProduct[product] = {
+            quantity: 0,
             totalPrice: 0,
-            date: purchaseDate, 
-            productId: productCode 
+            date: purchaseDate,
+            productId: productCode
           };
         }
         quantityByProduct[product].quantity += orderCount;
@@ -261,11 +281,11 @@ const App = () => {
       }
       if (orderCount > 0 && productCode.startsWith("P")) {
         if (!quantityPProducts[product]) {
-          quantityPProducts[product] = { 
-            quantity: 0, 
+          quantityPProducts[product] = {
+            quantity: 0,
             totalPrice: 0,
-            date: purchaseDate, 
-            productId: productCode 
+            date: purchaseDate,
+            productId: productCode
           };
         }
         quantityPProducts[product].quantity += orderCount;
@@ -289,6 +309,12 @@ const App = () => {
       dailySalesData.push(entry);
     });
 
+    // แปลง purchaseTypeBreakdown ให้เป็นออบเจ็กต์ที่เก็บจำนวน
+    const purchaseTypeCounts = {};
+    Object.entries(purchaseTypeBreakdown).forEach(([type, codes]) => {
+      purchaseTypeCounts[type] = codes.size;
+    });
+
     return {
       salesByCustomer,
       quantityByProduct,
@@ -297,6 +323,8 @@ const App = () => {
       totalQuantityPProducts,
       quantityPProducts,
       purchaseCount: purchaseCodes.size,
+      nonStockiestPurchaseCount: nonStockiestPurchaseCodes.size,
+      purchaseTypeCounts,
     };
   };
 
@@ -394,6 +422,9 @@ const App = () => {
             )}
             {loading && <p className="loading text-lg mt-4">Loading data...</p>}
           </div>
+          <div className="border border-gray-300 shadow-md rounded-xl">
+            <img src={how_to} alt="" className=" object-cover" />
+          </div>
         </div>
       </div>
     );
@@ -426,23 +457,23 @@ const App = () => {
     : [];
   const productData = data
     ? Object.entries(data.quantityByProduct)
-      .map(([name, { quantity, totalPrice, date, productId }]) => ({ 
-        name, 
-        quantity, 
+      .map(([name, { quantity, totalPrice, date, productId }]) => ({
+        name,
+        quantity,
         totalPrice: totalPrice.toFixed(2),
-        date, 
-        productId 
+        date,
+        productId
       }))
       .sort((a, b) => b.quantity - a.quantity)
     : [];
   const pProductData = data
     ? Object.entries(data.quantityPProducts)
-      .map(([name, { quantity, totalPrice, date, productId }]) => ({ 
-        name, 
-        quantity, 
+      .map(([name, { quantity, totalPrice, date, productId }]) => ({
+        name,
+        quantity,
         totalPrice: totalPrice.toFixed(2),
-        date, 
-        productId 
+        date,
+        productId
       }))
       .sort((a, b) => b.quantity - a.quantity)
     : [];
@@ -563,6 +594,12 @@ const App = () => {
       icon: <FaWarehouse size={30} className="text-teal-600" />,
       bgColor: "bg-teal-100",
     },
+    "Total Purchase Bills": {
+      total: data.nonStockiestPurchaseCount || 0,
+      purchaseTypeCounts: data.purchaseTypeCounts || {},
+      icon: <FaFileInvoice size={30} className="text-yellow-600" />,
+      bgColor: "bg-yellow-100",
+    },
   };
 
   const renderContent = () => {
@@ -576,7 +613,7 @@ const App = () => {
               <h2 className="text-2xl font-semibold text-blue-700">Summary</h2>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
-              {Object.entries(summaryData).map(([menu, { total, count, icon, bgColor }]) => (
+              {Object.entries(summaryData).map(([menu, { total, count, purchaseTypeCounts, icon, bgColor }]) => (
                 <div
                   key={menu}
                   className={`p-6 rounded-lg shadow-md ${bgColor} flex items-center space-x-4 transform transition-transform hover:scale-105 hover:shadow-lg`}
@@ -584,18 +621,34 @@ const App = () => {
                   <div>{icon}</div>
                   <div>
                     <h3 className="text-lg font-semibold text-gray-800">{menu}</h3>
-                    <p className="text-gray-600">
-                      {menu.includes("Sales") ? `Total Sales: $ ${total} USD` :
-                        menu === "Products Promotion" ? `Total Quantity: ${total} Sets` :
-                          `Total Quantity: ${total} units`}
-                    </p>
-                    <p className="text-gray-600">
-                      {menu === "Sales by Customer" ? "Member Counts :" :
-                        menu === "Quantity Sold by Product" ? "Product Items :" :
-                          menu === "Products Promotion" ? "Product Codes :" :
-                            menu === "Sales by Branch" ? "Branch :" :
-                              menu === "Sales by Stockiest Branch" ? "Stockiests :" : "Items :"} {count}
-                    </p>
+                    {menu === "Total Purchase Bills" ? (
+                      <div>
+                        <p className="text-gray-600">Total Non-Stockiest Bills: {total}</p>
+                        <div className="flex justify-between">
+                          {Object.entries(purchaseTypeCounts).slice(0, 3).map(([type, count]) => (
+                            <div key={type} className="text-gray-600 gap-2 px-2">{type}: {count}</div>
+                          ))}
+                          {Object.keys(purchaseTypeCounts).length > 3 && (
+                            <p className="text-gray-600">And more...</p>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <p className="text-gray-600">
+                          {menu.includes("Sales") ? `Total Sales: $ ${total} USD` :
+                            menu === "Products Promotion" ? `Total Quantity: ${total} Sets` :
+                              `Total Quantity: ${total} units`}
+                        </p>
+                        <p className="text-gray-600">
+                          {menu === "Sales by Customer" ? "Member Counts :" :
+                            menu === "Quantity Sold by Product" ? "Product Items :" :
+                              menu === "Products Promotion" ? "Product Codes :" :
+                                menu === "Sales by Branch" ? "Branch :" :
+                                  menu === "Sales by Stockiest Branch" ? "Stockiests :" : "Items :"} {count}
+                        </p>
+                      </>
+                    )}
                   </div>
                 </div>
               ))}
@@ -682,7 +735,7 @@ const App = () => {
           <div className="section bg-white p-6 rounded-lg shadow-lg mb-8 border border-gray-300">
             <div className="flex justify-between mb-4">
               <h2 className="text-2xl font-semibold text-gray-800">
-                Quantity Sold by Product : Top 10
+                Quantity Sold by Product : Top 10 <span className="text-red-600">(Not including promotions)</span>
               </h2>
               <div>
                 <input
@@ -804,7 +857,7 @@ const App = () => {
                       <tr>
                         <th>Product ID</th>
                         <th>Product</th>
-                        <th>Quantity</th>
+                        <th>Sets</th>
                         <th>Total Price (USD)</th>
                       </tr>
                     </thead>
@@ -1024,8 +1077,8 @@ const App = () => {
               Clear Data
             </button>
           </div>
-          <div className="header bg-gradient-to-r from-blue-900 to-blue-500 text-white rounded text-center space-y-2">
-            <div className="text flex space-y-1 justify-center gap-2 p-2">
+          <div className="header bg-gradient-to-r from-blue-900 to-blue-500 text-[14px] p-2 text-white rounded flex items-center justify-center ">
+            <div className="flex gap-2">
               <div>
                 <strong>File Name :</strong> {fileName || "N/A"} |{" "}
               </div>
