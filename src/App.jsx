@@ -372,7 +372,7 @@ const App = () => {
   if (!data) {
     return (
       <div className="flex">
-        <div className="sidebar">
+        <div className="sidebar relative">
           <img src={scm_log} width={170} alt="logo" className="mb-5 pl-3" />
           <ul>
             {menuItems.map((menu) => (
@@ -391,10 +391,13 @@ const App = () => {
               </li>
             ))}
           </ul>
+          <div className=" absolute px-2 bottom-2 w-full">
+            <p className="w-full py-4 px-4 border rounded-md  text-gray-700 bg-gray-50 border-gray-200 font-light">Copyright © by <span className="font-semibold">RON PHEAROM</span></p>
+          </div>
         </div>
         <div className="content flex-1">
           <div className="header bg-gradient-to-r from-green-700 to-green-500 text-white p-6 rounded-t-lg text-center">
-            <h1 className="text-4xl font-bold">Sales Report</h1>
+            <h1 className="text-4xl font-semibold">Sales Report</h1>
           </div>
           <div className="upload-section bg-white p-6 rounded-b-lg shadow-lg mb-8 text-center border border-gray-300">
             <h2 className="text-2xl font-semibold text-green-700 mb-4">
@@ -812,7 +815,7 @@ const App = () => {
           <div className="section bg-white p-6 rounded-lg shadow-lg mb-8 border border-gray-300">
             <div className="flex justify-between mb-4">
               <h2 className="text-2xl font-semibold text-gray-700">
-                Quantity of Products Promotion Top 5
+                Quantity of Products Promotion Top 10
               </h2>
               <div>
                 <input
@@ -1039,7 +1042,7 @@ const App = () => {
 
   return (
     <div className="flex">
-      <div className="sidebar">
+      <div className="sidebar relative">
         <img src={scm_log} width={170} alt="logo" className="mb-5 pl-3" />
         <ul>
           {menuItems.map((menu) => (
@@ -1058,6 +1061,9 @@ const App = () => {
             </li>
           ))}
         </ul>
+        <div className=" absolute px-2 bottom-2 w-full">
+          <p className="w-full py-4 px-4 border rounded-md  text-gray-700 bg-gray-50 border-gray-200 font-light">Copyright © by <span className="font-semibold">RON PHEAROM</span></p>
+        </div>
       </div>
       <div className="content flex-1">
         <div className="upload-section bg-white p-6 rounded-lg shadow-lg mb-8 text-center justify-between flex gap-4 border border-gray-300">
@@ -1081,13 +1087,11 @@ const App = () => {
               Clear Data
             </button>
           </div>
-          <div className="header bg-gradient-to-r from-green-700 to-green-500 text-[14px] py-2 px-4 text-white rounded flex items-center justify-center ">
-            <div className="flex gap-2">
-              <div>
-                <strong>File Name :</strong> {fileName || "N/A"} |{" "}
-              </div>
-              <div>
-                <strong>Date Range:</strong> {formatDateRange(dateRange)}
+          <div className="header bg-gradient-to-r from-green-700 to-green-500 py-2 px-4 text-white rounded flex items-center justify-center ">
+            <div>
+              <div className="flex gap-2">
+                <p>File Name : <span className="font-semibold">{fileName || "N/A"} |{" "}</span> </p>
+                <p>Date Range: <span className="font-semibold">{formatDateRange(dateRange)}</span> </p>
               </div>
             </div>
           </div>
