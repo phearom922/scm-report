@@ -392,7 +392,7 @@ const App = () => {
             ))}
           </ul>
           <div className=" absolute px-2 bottom-2 w-full">
-            <p className="w-full py-4 px-4 border rounded-md  text-gray-700 bg-gray-50 border-gray-200 font-light">Copyright © by <span className="font-semibold">RON PHEAROM</span></p>
+            <p className="w-full py-4 px-4 border rounded-md  text-gray-700 bg-gray-50 border-gray-200 font-light">© Copyright by <span className="font-semibold">RON PHEAROM</span></p>
           </div>
         </div>
         <div className="content flex-1">
@@ -1062,7 +1062,7 @@ const App = () => {
           ))}
         </ul>
         <div className=" absolute px-2 bottom-2 w-full">
-          <p className="w-full py-4 px-4 border rounded-md  text-gray-700 bg-gray-50 border-gray-200 font-light">Copyright © by <span className="font-semibold">RON PHEAROM</span></p>
+          <p className="w-full py-4 px-4 border rounded-md  text-gray-700 bg-gray-50 border-gray-200 font-light">© Copyright by <span className="font-semibold">RON PHEAROM</span></p>
         </div>
       </div>
       <div className="content flex-1">
@@ -1071,23 +1071,23 @@ const App = () => {
             <div className="flex justify-center items-center gap-1">
               <label className="flex justify-center items-center gap-1 hover:cursor-pointer ">
                 <FaFileExcel size={36} className="text-green-700" />
-                <p className="font-kantumruy text-xl border border-green-700 py-1 px-3 transition-all duration-200 rounded hover:bg-green-700 tra hover:text-white text-green-700 font-medium">ចុចត្រង់នេះដើម្បី​ Upload File</p>
+                <p className="font-kantumruy md:text-[1rem]  lg:text-[1.1rem] border border-green-700 py-2 px-3 transition-all duration-200 rounded hover:bg-green-700 tra hover:text-white text-green-700 font-medium">ចុចត្រង់នេះដើម្បី​ Upload File</p>
                 <input
                   type="file"
                   accept=".xlsx,.xls,.csv"
-                  className="upload-btn px-4 hidden py-2 2/12 border border-green-700 rounded text-green-700 cursor-pointer hover:text-white"
+                  className="upload-btn px-4 hidden py-2 border border-green-700 rounded text-green-700 cursor-pointer hover:text-white"
                   onChange={handleFileUpload}
                 />
               </label>
             </div>
             <button
               onClick={clearLocalStorage}
-              className="clear-btn px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 cursor-pointer"
+              className="clear-btn px-3 py-2 bg-red-600 text-white rounded hover:bg-red-700 cursor-pointer"
             >
               Clear Data
             </button>
           </div>
-          <div className="header bg-gradient-to-r from-green-700 to-green-500 py-2 px-4 text-white rounded flex items-center justify-center ">
+          <div className="header bg-gradient-to-r lg:text-[12px] from-green-700 to-green-500 py-2 px-3 text-white rounded flex items-center justify-center ">
             <div>
               <div className="flex gap-2">
                 <p>File Name : <span className="font-semibold">{fileName || "N/A"} |{" "}</span> </p>
