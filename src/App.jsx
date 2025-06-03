@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { FaFileExcel, FaFileCsv, FaFileAlt, FaChartPie, FaUsers, FaBox, FaTags, FaBuilding, FaWarehouse, FaFileDownload, FaSyncAlt, FaFileInvoice } from "react-icons/fa";
-import { ResponsiveContainer, BarChart, CartesianGrid, XAxis, YAxis, Tooltip, Legend, Bar, LineChart, Line, } from "recharts";
+import { ResponsiveContainer, BarChart, CartesianGrid, XAxis, YAxis, Tooltip, Legend, Bar, LineChart, Line } from "recharts";
 import * as XLSX from "xlsx";
 import Papa from "papaparse";
 import axios from "axios";
@@ -16,7 +16,8 @@ const App = () => {
   const [selectedMenu, setSelectedMenu] = useState("Summary");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
-  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedProduct, setSelectedProduct] = useState("");
+  const [selectedCustomer, setSelectedCustomer] = useState("");
   const [fileName, setFileName] = useState("");
   const [dateRange, setDateRange] = useState({ start: null, end: null });
   const [googleSheetDateRange, setGoogleSheetDateRange] = useState({ start: null, end: null });
@@ -85,7 +86,7 @@ const App = () => {
       console.log("Cleaned Data:", cleanedData);
 
       const purchaseDates = mappedData
-        .map((row) => parse(row["purchaseDate"], "M/d/yyyy HH:mm", new Date())) // ปรับรูปแบบวันที่ให้ตรงกับ "6/1/2025 23:21"
+        .map((row) => parse(row["purchaseDate"], "M/d/yyyy HH:mm", new Date()))
         .filter((date) => isValid(date));
       const start = purchaseDates.length > 0 ? new Date(Math.min(...purchaseDates)) : null;
       const end = purchaseDates.length > 0 ? new Date(Math.max(...purchaseDates)) : null;
@@ -103,18 +104,18 @@ const App = () => {
 
   const mapGoogleSheetData = (rows) => {
     return rows.map((row) => ({
-      memberLocalName: row["CustomerName"] || "Unknown", // ยังไม่มีในข้อมูล อาจต้องเพิ่มใน Google Sheet
-      memberId: row["MemberID"] || "N/A", // ยังไม่มีในข้อมูล อาจต้องเพิ่มใน Google Sheet
-      totalAmount: parseFloat(row["Total Sales (All)"]) || 0, // ใช้ Total Sales (All) เป็นตัวแทนยอดขายรวม
-      orderCount: parseInt(row["Total Sales (All)"]) || 0, // ใช้ Total Sales (All) เป็นจำนวนการขาย
+      memberLocalName: row["CustomerName"] || "Unknown",
+      memberId: row["MemberID"] || "N/A",
+      totalAmount: parseFloat(row["Total Sales (All)"]) || 0,
+      orderCount: parseInt(row["Total Sales (All)"]) || 0,
       productName: row["Product Name"] || "Unknown",
       productCode: row["SKU"] || "N/A",
       branchTransactionCode: row["Branch"] || "N/A",
-      branchReceiveCode: row["BranchReceive"] || "N/A", // ยังไม่มีในข้อมูล อาจต้องเพิ่มใน Google Sheet
+      branchReceiveCode: row["BranchReceive"] || "N/A",
       purchaseDate: row["date"] || "N/A",
-      purchaseCode: row["PurchaseCode"] || "N/A", // ยังไม่มีในข้อมูล อาจต้องเพิ่มใน Google Sheet
-      purchaseChannel: row["PurchaseChannel"] || "N/A", // ยังไม่มีในข้อมูล อาจต้องเพิ่มใน Google Sheet
-      purchaseType: row["PurchaseType"] || "Unknown", // ยังไม่มีในข้อมูล อาจต้องเพิ่มใน Google Sheet
+      purchaseCode: row["PurchaseCode"] || "N/A",
+      purchaseChannel: row["PurchaseChannel"] || "N/A",
+      purchaseType: row["PurchaseType"] || "Unknown",
       totalThisPrice: parseFloat(row["Total Price (All)"]) || 0,
     }));
   };
@@ -259,7 +260,8 @@ const App = () => {
     setLoading(false);
     setStartDate("");
     setEndDate("");
-    setSearchQuery("");
+    setSelectedProduct("");
+    setSelectedCustomer("");
     setFileName("");
     setDateRange({ start: null, end: null });
     setGoogleSheetDateRange({ start: null, end: null });
@@ -276,9 +278,11 @@ const App = () => {
   const processAndCleanData = (rawData) => {
     const salesByCustomer = {};
     const quantityByProduct = {};
+    const quantityByProductWithCustomer = {};
     const salesByBranch = {};
     const salesByBranchDaily = {};
     const quantityPProducts = {};
+    const quantityPProductsWithCustomer = {};
     let totalQuantityPProducts = 0;
     const purchaseCodes = new Set();
     const nonStockiestPurchaseCodes = new Set();
@@ -318,6 +322,16 @@ const App = () => {
         quantityByProduct[product] = quantityByProduct[product] || { quantity: 0, totalPrice: 0, date: purchaseDate, productId: productCode };
         quantityByProduct[product].quantity += orderCount;
         quantityByProduct[product].totalPrice += totalThisPrice;
+
+        quantityByProductWithCustomer[product] = quantityByProductWithCustomer[product] || {};
+        quantityByProductWithCustomer[product][customer] = quantityByProductWithCustomer[product][customer] || {
+          quantity: 0,
+          totalPrice: 0,
+          date: purchaseDate,
+          productId: productCode,
+        };
+        quantityByProductWithCustomer[product][customer].quantity += orderCount;
+        quantityByProductWithCustomer[product][customer].totalPrice += totalThisPrice;
       }
 
       if (totalAmount > 0) {
@@ -336,6 +350,16 @@ const App = () => {
         quantityPProducts[product].quantity += orderCount;
         quantityPProducts[product].totalPrice += totalThisPrice;
         totalQuantityPProducts += orderCount;
+
+        quantityPProductsWithCustomer[product] = quantityPProductsWithCustomer[product] || {};
+        quantityPProductsWithCustomer[product][customer] = quantityPProductsWithCustomer[product][customer] || {
+          quantity: 0,
+          totalPrice: 0,
+          date: purchaseDate,
+          productId: productCode,
+        };
+        quantityPProductsWithCustomer[product][customer].quantity += orderCount;
+        quantityPProductsWithCustomer[product][customer].totalPrice += totalThisPrice;
       }
     });
 
@@ -362,10 +386,12 @@ const App = () => {
     return {
       salesByCustomer,
       quantityByProduct,
+      quantityByProductWithCustomer,
       salesByBranch,
       salesByBranchDaily: dailySalesData,
       totalQuantityPProducts,
       quantityPProducts,
+      quantityPProductsWithCustomer,
       purchaseCount: purchaseCodes.size,
       nonStockiestPurchaseCount: nonStockiestPurchaseCodes.size,
       purchaseTypeCounts,
@@ -383,10 +409,28 @@ const App = () => {
     });
   };
 
-  const filterBySearch = (dataArray, query) => {
-    if (!query || !dataArray) return dataArray || [];
-    const searchField = dataArray[0]?.branch ? "branch" : "name";
-    return dataArray.filter((item) => item[searchField].toLowerCase().includes(query.toLowerCase()));
+  const filterByProductAndCustomer = (dataObj, productQuery, customerQuery) => {
+    if (!dataObj) return [];
+
+    const result = [];
+    Object.entries(dataObj).forEach(([product, customers]) => {
+      if (productQuery && !product.toLowerCase().includes(productQuery.toLowerCase())) return;
+
+      Object.entries(customers).forEach(([customer, { quantity, totalPrice, date, productId }]) => {
+        if (customerQuery && !customer.toLowerCase().includes(customerQuery.toLowerCase())) return;
+
+        result.push({
+          name: product,
+          customer,
+          quantity: quantity || 0,
+          totalPrice: totalPrice ? totalPrice.toFixed(2) : "0.00",
+          date,
+          productId,
+        });
+      });
+    });
+
+    return result.sort((a, b) => b.quantity - a.quantity);
   };
 
   const formatDateRange = (range) => {
@@ -437,43 +481,6 @@ const App = () => {
             <div className="animate-spin rounded-full h-20 w-20 border-8 border-t-red-700 border-gray-200"></div>
           </div>
         </div>
-
-        {/* <div className="content flex-1">
-          <div className="header bg-gradient-to-r from-green-700 to-green-500 text-white p-6 rounded-t-lg text-center">
-            <h1 className="text-4xl font-semibold">Sales Report</h1>
-          </div>
-          <div className="upload-section bg-white p-6 rounded-b-lg shadow-lg mb-8 text-center border border-gray-300">
-            <h2 className="text-2xl font-semibold text-green-700 mb-4">
-              Upload File to View Report
-            </h2>
-            <div className="flex justify-between items-center border-2 p-10 rounded-md border-dotted border-gray-500">
-              <label className="flex justify-center items-center gap-1 hover:cursor-pointer">
-                <FaFileExcel size={36} className="text-green-700" />
-                <p className="font-kantumruy text-xl border border-green-700 py-1 px-3 transition-all duration-200 rounded hover:bg-green-700 tra hover:text-white text-green-700 font-medium">
-                  ចុចត្រង់នេះដើម្បី Upload File
-                </p>
-                <input
-                  type="file"
-                  accept=".xlsx,.xls,.csv"
-                  className="upload-btn px-4 hidden py-2 2/12 border border-green-700 rounded text-green-700 cursor-pointer hover:text-white"
-                  onChange={handleFileUpload}
-                />
-              </label>
-              <div className="flex justify-center items-center gap-2 text-gray-600">
-                <FaFileCsv size={25} />
-                <FaFileExcel size={25} />
-                <FaFileAlt size={25} />
-                <p>Support File: .xlsx, .xls, .csv</p>
-              </div>
-            </div>
-            {error && <p className="error text-red-600 text-lg mt-4">{error}</p>}
-            {loading && <p className="loading text-lg mt-4">Loading Google Sheet data...</p>}
-          </div>
-          <div className="border border-gray-300 shadow-md rounded-xl">
-            <img src="/how_to_upoad_file-01.png" alt="" className="object-cover" />
-          </div>
-        </div> */}
-
       </div>
     );
   }
@@ -501,12 +508,28 @@ const App = () => {
       .sort((a, b) => b.amount - a.amount)
     : [];
 
+  const uniqueCustomers = [...new Set(customerData.map((item) => item.name))].sort();
+  const uniqueProducts = data && data.quantityByProduct
+    ? [...new Set(Object.keys(data.quantityByProduct))].sort()
+    : [];
+  const uniquePProducts = data && data.quantityPProducts
+    ? [...new Set(Object.keys(data.quantityPProducts))].sort()
+    : [];
+
+  const productDataWithCustomer = data && data.quantityByProductWithCustomer
+    ? filterByDate(filterByProductAndCustomer(data.quantityByProductWithCustomer, selectedProduct, selectedCustomer), startDate, endDate)
+    : [];
+
+  const pProductDataWithCustomer = data && data.quantityPProductsWithCustomer
+    ? filterByDate(filterByProductAndCustomer(data.quantityPProductsWithCustomer, selectedProduct, selectedCustomer), startDate, endDate)
+    : [];
+
   const productData = data && data.quantityByProduct
     ? Object.entries(data.quantityByProduct)
       .map(([name, { quantity, totalPrice, date, productId }]) => ({
         name,
         quantity,
-        totalPrice: totalPrice.toFixed(2),
+        totalPrice: totalPrice ? totalPrice.toFixed(2) : "0.00",
         date,
         productId,
       }))
@@ -518,7 +541,7 @@ const App = () => {
       .map(([name, { quantity, totalPrice, date, productId }]) => ({
         name,
         quantity,
-        totalPrice: totalPrice.toFixed(2),
+        totalPrice: totalPrice ? totalPrice.toFixed(2) : "0.00",
         date,
         productId,
       }))
@@ -531,38 +554,56 @@ const App = () => {
       .sort((a, b) => b.amount - a.amount)
     : [];
 
-  const customerTop10 = filterByDate(filterBySearch(customerData, searchQuery), startDate, endDate).slice(0, 10);
-  const productTop10 = filterByDate(filterBySearch(productData, searchQuery), startDate, endDate).slice(0, 10);
-  const pProductTop10 = filterByDate(filterBySearch(pProductData, searchQuery), startDate, endDate).slice(0, 10);
-  const googleSheetProductTop10 = filterByDate(filterBySearch(productData, searchQuery), startDate, endDate).slice(0, 10);
+  const customerTop10 = filterByDate(customerData, startDate, endDate).slice(0, 10);
+  const productTop10 = productData.slice(0, 10);
+  const pProductTop10 = pProductData.slice(0, 10);
+  const googleSheetProductTop10 = filterByDate(
+    Object.entries(googleSheetData?.quantityByProduct || {})
+      .map(([name, { quantity, totalPrice, date, productId }]) => ({
+        name,
+        quantity,
+        totalPrice: totalPrice ? totalPrice.toFixed(2) : "0.00",
+        date,
+        productId,
+      }))
+      .sort((a, b) => b.quantity - a.quantity),
+    startDate,
+    endDate
+  ).slice(0, 10);
   const branchTop10 = filterByDate(
-    filterBySearch(
-      branchData.filter((item) => item.branch.startsWith("PNH01") || item.branch.startsWith("KCM01")),
-      searchQuery
-    ),
+    branchData.filter((item) => item.branch.startsWith("PNH01") || item.branch.startsWith("KCM01")),
     startDate,
     endDate
   ).slice(0, 10);
   const stockiestBranchTop10 = filterByDate(
-    filterBySearch(branchData.filter((item) => item.branch.startsWith("KS")), searchQuery),
+    branchData.filter((item) => item.branch.startsWith("KS")),
     startDate,
     endDate
   ).slice(0, 10);
 
-  const customerAll = filterByDate(filterBySearch(customerData, searchQuery), startDate, endDate);
-  const productAll = filterByDate(filterBySearch(productData, searchQuery), startDate, endDate);
-  const pProductAll = filterByDate(filterBySearch(pProductData, searchQuery), startDate, endDate);
-  const googleSheetProductAll = filterByDate(filterBySearch(productData, searchQuery), startDate, endDate);
+  const customerAll = filterByDate(customerData, startDate, endDate);
+  const productAll = productData;
+  const pProductAll = pProductData;
+  const googleSheetProductAll = filterByDate(
+    Object.entries(googleSheetData?.quantityByProduct || {})
+      .map(([name, { quantity, totalPrice, date, productId }]) => ({
+        name,
+        quantity,
+        totalPrice: totalPrice ? totalPrice.toFixed(2) : "0.00",
+        date,
+        productId,
+      }))
+      .sort((a, b) => b.quantity - a.quantity),
+    startDate,
+    endDate
+  );
   const branchAll = filterByDate(
-    filterBySearch(
-      branchData.filter((item) => item.branch.startsWith("PNH01") || item.branch.startsWith("KCM01")),
-      searchQuery
-    ),
+    branchData.filter((item) => item.branch.startsWith("PNH01") || item.branch.startsWith("KCM01")),
     startDate,
     endDate
   );
   const stockiestBranchAll = filterByDate(
-    filterBySearch(branchData.filter((item) => item.branch.startsWith("KS")), searchQuery),
+    branchData.filter((item) => item.branch.startsWith("KS")),
     startDate,
     endDate
   );
@@ -572,7 +613,6 @@ const App = () => {
       .reduce((sum, val) => sum + val.amount, 0)
       .toFixed(2)
     : "0.00";
-  const topProduct = data && productData.length > 0 ? productData[0] : { name: "N/A", quantity: 0 };
 
   const summaryData = {
     "Sales by Customer": {
@@ -611,17 +651,12 @@ const App = () => {
       icon: <FaFileInvoice size={30} className="text-yellow-600" />,
       bgColor: "bg-yellow-100",
     },
-    // "Google Sheets Data": {
-    //   total: googleSheetProductAll.reduce((sum, item) => sum + item.quantity, 0),
-    //   count: googleSheetProductAll.length,
-    //   icon: <FaFileDownload size={30} className="text-indigo-600" />,
-    //   bgColor: "bg-indigo-100",
-    // },
   };
 
   const renderContent = () => {
     let filteredDataGraph = [];
     let filteredDataTable = [];
+    let totalDataTable = [];
     switch (selectedMenu) {
       case "Summary":
         return (
@@ -663,14 +698,14 @@ const App = () => {
                           {menu === "Sales by Customer"
                             ? "Member Counts :"
                             : menu === "Quantity Sold by Product"
-                              ? "Product Items :"
-                              : menu === "Products Promotion"
-                                ? "Product Codes :"
-                                : menu === "Sales by Branch"
-                                  ? "Branch :"
-                                  : menu === "Sales by Stockiest Branch"
-                                    ? "Stockiests :"
-                                    : "Items :"}{" "}
+                            ? "Product Items :"
+                            : menu === "Products Promotion"
+                            ? "Product Codes :"
+                            : menu === "Sales by Branch"
+                            ? "Branch :"
+                            : menu === "Sales by Stockiest Branch"
+                            ? "Stockiests :"
+                            : "Items :"}{" "}
                           {count}
                         </p>
                       </>
@@ -688,15 +723,20 @@ const App = () => {
           <div className="section bg-white p-6 rounded-lg shadow-lg mb-8 border border-gray-300">
             <div className="flex justify-between mb-4">
               <h2 className="text-2xl font-semibold text-gray-700">Sales by Customer: Top 10</h2>
-              <div>
-                <input
-                  type="text"
-                  placeholder="Search customers..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="p-2 border rounded"
-                />
-              </div>
+              {/* <div>
+                <select
+                  value={selectedCustomer}
+                  onChange={(e) => setSelectedCustomer(e.target.value)}
+                  className="p-2 border rounded bg-white text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-green-500"
+                >
+                  <option value="">Select customer...</option>
+                  {uniqueCustomers.map((customer) => (
+                    <option key={customer} value={customer}>
+                      {customer}
+                    </option>
+                  ))}
+                </select>
+              </div> */}
             </div>
             <ResponsiveContainer width="100%" height={400}>
               <BarChart data={filteredDataGraph}>
@@ -742,21 +782,39 @@ const App = () => {
         );
       case "Quantity Sold by Product":
         filteredDataGraph = productTop10;
-        filteredDataTable = productAll;
+        filteredDataTable = productDataWithCustomer;
+        totalDataTable = productAll;
         return (
           <div className="section bg-white p-6 rounded-lg shadow-lg mb-8 border border-gray-300">
-            <div className="flex justify-between mb-4">
+            <div className="flex flex-col mb-4 space-y-4">
               <h2 className="text-2xl font-semibold text-gray-700">
                 Quantity Sold by Product: Top 10 <span className="text-red-600">(Not including promotions)</span>
               </h2>
-              <div>
-                <input
-                  type="text"
-                  placeholder="Search products..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="p-2 border rounded"
-                />
+              <div className="flex gap-4">
+                <select
+                  value={selectedProduct}
+                  onChange={(e) => setSelectedProduct(e.target.value)}
+                  className="p-2 border rounded bg-white text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-green-500"
+                >
+                  <option value="">Select product...</option>
+                  {uniqueProducts.map((product) => (
+                    <option key={product} value={product}>
+                      {product}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={selectedCustomer}
+                  onChange={(e) => setSelectedCustomer(e.target.value)}
+                  className="p-2 border rounded bg-white text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-green-500"
+                >
+                  <option value="">Select customer...</option>
+                  {uniqueCustomers.map((customer) => (
+                    <option key={customer} value={customer}>
+                      {customer}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
             <ResponsiveContainer width="100%" height={400}>
@@ -772,8 +830,39 @@ const App = () => {
                 <Bar dataKey="quantity" fill="#10B981" name="Quantity" />
               </BarChart>
             </ResponsiveContainer>
-            {productData.length > 0 && (
+            {productDataWithCustomer.length > 0 && (
               <div>
+                <h3 className="text-xl font-semibold text-gray-700 mt-4">Filtered Results</h3>
+                <div className="scroll-table">
+                  <table>
+                    <thead className="sold-product">
+                      <tr>
+                        <th>Product ID</th>
+                        <th>Product</th>
+                        <th>Customer</th>
+                        <th>Quantity</th>
+                        <th>Total Price (USD)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredDataTable.map((item, index) => (
+                        <tr key={`${item.name}-${item.customer}-${index}`}>
+                          <td>{item.productId}</td>
+                          <td>{item.name}</td>
+                          <td>{item.customer}</td>
+                          <td>{item.quantity}</td>
+                          <td>{item.totalPrice}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <p className="mt-4 font-semibold text-xl">Filtered Items: {filteredDataTable.length} Entries</p>
+              </div>
+            )}
+            {totalDataTable.length > 0 && (
+              <div>
+                <h3 className="text-xl font-semibold text-gray-700 mt-6">Total Summary</h3>
                 <div className="scroll-table">
                   <table>
                     <thead className="sold-product">
@@ -785,8 +874,8 @@ const App = () => {
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredDataTable.map((item) => (
-                        <tr key={item.name}>
+                      {totalDataTable.map((item, index) => (
+                        <tr key={`${item.name}-${index}`}>
                           <td>{item.productId}</td>
                           <td>{item.name}</td>
                           <td>{item.quantity}</td>
@@ -796,26 +885,44 @@ const App = () => {
                     </tbody>
                   </table>
                 </div>
-                <p className="mt-4 font-semibold text-xl">Products Items: {filteredDataTable.length} Items</p>
+                <p className="mt-4 font-semibold text-xl">Total Items: {totalDataTable.length} Products</p>
               </div>
             )}
           </div>
         );
       case "Products Promotion":
         filteredDataGraph = pProductTop10;
-        filteredDataTable = pProductAll;
+        filteredDataTable = pProductDataWithCustomer;
+        totalDataTable = pProductAll;
         return (
           <div className="section bg-white p-6 rounded-lg shadow-lg mb-8 border border-gray-300">
-            <div className="flex justify-between mb-4">
+            <div className="flex flex-col space-y-4 mb-4">
               <h2 className="text-2xl font-semibold text-gray-700">Quantity of Products Promotion Top 10</h2>
-              <div>
-                <input
-                  type="text"
-                  placeholder="Search products..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="p-2 border rounded"
-                />
+              <div className="flex gap-4">
+                <select
+                  value={selectedProduct}
+                  onChange={(e) => setSelectedProduct(e.target.value)}
+                  className="p-2 border rounded bg-white text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-green-500"
+                >
+                  <option value="">Select product...</option>
+                  {uniquePProducts.map((product) => (
+                    <option key={product} value={product}>
+                      {product}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={selectedCustomer}
+                  onChange={(e) => setSelectedCustomer(e.target.value)}
+                  className="p-2 border rounded bg-white text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-green-500"
+                >
+                  <option value="">Select customer...</option>
+                  {uniqueCustomers.map((customer) => (
+                    <option key={customer} value={customer}>
+                      {customer}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
             <ResponsiveContainer width="100%" height={400}>
@@ -831,8 +938,39 @@ const App = () => {
                 <Bar dataKey="quantity" fill="#F97316" name="Quantity" />
               </BarChart>
             </ResponsiveContainer>
-            {pProductData.length > 0 && (
+            {pProductDataWithCustomer.length > 0 && (
               <div>
+                <h3 className="text-xl font-semibold text-gray-700 mt-4">Filtered Results</h3>
+                <div className="scroll-table">
+                  <table>
+                    <thead className="promotion">
+                      <tr>
+                        <th>Product ID</th>
+                        <th>Product</th>
+                        <th>Customer</th>
+                        <th>Sets</th>
+                        <th>Total Price (USD)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredDataTable.map((item, index) => (
+                        <tr key={`${item.name}-${item.customer}-${index}`}>
+                          <td>{item.productId}</td>
+                          <td>{item.name}</td>
+                          <td>{item.customer}</td>
+                          <td>{item.quantity}</td>
+                          <td>{item.totalPrice}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <p className="mt-4 font-semibold text-xl">Filtered Items: {filteredDataTable.length} Entries</p>
+              </div>
+            )}
+            {totalDataTable.length > 0 && (
+              <div>
+                <h3 className="text-xl font-semibold text-gray-700 mt-6">Total Summary</h3>
                 <div className="scroll-table">
                   <table>
                     <thead className="promotion">
@@ -844,8 +982,8 @@ const App = () => {
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredDataTable.map((item) => (
-                        <tr key={item.name}>
+                      {totalDataTable.map((item, index) => (
+                        <tr key={`${item.name}-${index}`}>
                           <td>{item.productId}</td>
                           <td>{item.name}</td>
                           <td>{item.quantity}</td>
@@ -855,7 +993,7 @@ const App = () => {
                     </tbody>
                   </table>
                 </div>
-                <p className="mt-4 font-semibold text-xl">Promotion Items: {filteredDataTable.length} Items</p>
+                <p className="mt-4 font-semibold text-xl">Total Items: {totalDataTable.length} Products</p>
               </div>
             )}
           </div>
@@ -865,18 +1003,15 @@ const App = () => {
         filteredDataTable = branchAll;
 
         const filteredGraphData = filterByDate(
-          filterBySearch(
-            filteredDataGraph.map((item) => {
-              const filteredItem = { date: item.date };
-              Object.keys(item).forEach((key) => {
-                if (key !== "date" && (key.startsWith("PNH01") || key.startsWith("KCM01"))) {
-                  filteredItem[key] = item[key];
-                }
-              });
-              return filteredItem;
-            }),
-            searchQuery
-          ),
+          filteredDataGraph.map((item) => {
+            const filteredItem = { date: item.date };
+            Object.keys(item).forEach((key) => {
+              if (key !== "date" && (key.startsWith("PNH01") || key.startsWith("KCM01"))) {
+                filteredItem[key] = item[key];
+              }
+            });
+            return filteredItem;
+          }),
           startDate,
           endDate
         );
@@ -885,15 +1020,20 @@ const App = () => {
           <div className="section bg-white p-6 rounded-lg shadow-lg mb-8 border border-gray-300">
             <div className="flex justify-between mb-4">
               <h2 className="text-2xl font-semibold text-gray-700">Daily Sales Trend by Branch</h2>
-              <div>
-                <input
-                  type="text"
-                  placeholder="Search branches..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="p-2 border rounded"
-                />
-              </div>
+              {/* <div>
+                <select
+                  value={selectedCustomer}
+                  onChange={(e) => setSelectedCustomer(e.target.value)}
+                  className="p-2 border rounded bg-white text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-green-500"
+                >
+                  <option value="">Select branch...</option>
+                  {[...new Set(branchData.map((item) => item.branch))].sort().map((branch) => (
+                    <option key={branch} value={branch}>
+                      {branch}
+                    </option>
+                  ))}
+                </select>
+              </div> */}
             </div>
             <ResponsiveContainer width="100%" height={400}>
               <LineChart data={filteredGraphData}>
@@ -954,15 +1094,20 @@ const App = () => {
           <div className="section bg-white p-6 rounded-lg shadow-lg mb-8 border border-gray-300">
             <div className="flex justify-between mb-4">
               <h2 className="text-2xl font-semibold text-gray-700">Sales by Stockiest Branch</h2>
-              <div>
-                <input
-                  type="text"
-                  placeholder="Search branches..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="p-2 border rounded"
-                />
-              </div>
+              {/* <div>
+                <select
+                  value={selectedCustomer}
+                  onChange={(e) => setSelectedCustomer(e.target.value)}
+                  className="p-2 border rounded bg-white text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-green-500"
+                >
+                  <option value="">Select branch...</option>
+                  {[...new Set(branchData.map((item) => item.branch))].sort().map((branch) => (
+                    <option key={branch} value={branch}>
+                      {branch}
+                    </option>
+                  ))}
+                </select>
+              </div> */}
             </div>
             <ResponsiveContainer width="100%" height={400}>
               <BarChart data={filteredDataGraph}>
@@ -1008,7 +1153,6 @@ const App = () => {
               <h2 className="text-2xl font-semibold text-gray-700">All Quantity <span className="text-green-800">(includes promotions)</span></h2>
               <div className="flex items-center gap-4">
                 <p className="text-gray-600">Date Range: <span className="font-semibold">{formatDateRange(googleSheetDateRange)}</span></p>
-                {/* <p className="text-gray-600">Last Updated: <span className="font-semibold">{formatLastUpdated(lastUpdated)}</span></p> */}
                 <button
                   onClick={fetchGoogleSheetData}
                   className="flex items-center gap-1 px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 cursor-pointer"
@@ -1016,13 +1160,18 @@ const App = () => {
                   <FaSyncAlt size={16} />
                   Refresh Data
                 </button>
-                <input
-                  type="text"
-                  placeholder="Search products..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="p-2 border rounded"
-                />
+                {/* <select
+                  value={selectedProduct}
+                  onChange={(e) => setSelectedProduct(e.target.value)}
+                  className="p-2 border rounded bg-white text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-green-500"
+                >
+                  <option value="">Select product...</option>
+                  {uniqueProducts.map((product) => (
+                    <option key={product} value={product}>
+                      {product}
+                    </option>
+                  ))}
+                </select> */}
               </div>
             </div>
             {filteredDataGraph.length === 0 ? (
@@ -1051,8 +1200,6 @@ const App = () => {
                         <th>Product ID</th>
                         <th>Product</th>
                         <th>Quantity</th>
-                        {/* <th>Total Price (USD)</th>
-                        <th>Total Price (All)</th> */}
                       </tr>
                     </thead>
                     <tbody>
@@ -1061,8 +1208,6 @@ const App = () => {
                           <td>{item.productId}</td>
                           <td>{item.name}</td>
                           <td>{item.quantity}</td>
-                          {/* <td>{item.totalPrice}</td>
-                          <td>{item.totalPrice}</td> */}
                         </tr>
                       ))}
                     </tbody>
@@ -1133,9 +1278,6 @@ const App = () => {
           <div className="header bg-gradient-to-r lg:text-[12px] from-green-700 to-green-500 py-2 px-3 text-white rounded flex items-center justify-center">
             <div>
               <div className="flex gap-2">
-                {/* <p>
-                  Source: <span className="font-semibold">{dataSource === "google-sheet" ? "Google Sheet" : fileName || "N/A"}</span> |{" "}
-                </p> */}
                 <p>
                   Date Range: <span className="font-semibold">{formatDateRange(currentDateRange)}</span>
                 </p>
