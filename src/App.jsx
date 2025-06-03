@@ -1,25 +1,16 @@
 import React, { useState, useEffect } from "react";
-import { FaFileExcel, FaFileCsv, FaFileAlt } from "react-icons/fa";
-import { FaChartPie, FaUsers, FaBox, FaTags, FaBuilding, FaWarehouse, FaFileInvoice } from "react-icons/fa";
-import scm_log from "/SCM-Logo.png";
-import how_to from "/how_to_upoad_file-01.png";
-
-import {
-  ResponsiveContainer,
-  LineChart,
-  CartesianGrid,
-  XAxis,
-  YAxis,
-  Tooltip,
-  Legend,
-  Line,
-  BarChart,
-  Bar,
-} from "recharts";
+import { FaFileExcel, FaFileCsv, FaFileAlt, FaChartPie, FaUsers, FaBox, FaTags, FaBuilding, FaWarehouse, FaFileDownload, FaSyncAlt, FaFileInvoice } from "react-icons/fa";
+import { ResponsiveContainer, BarChart, CartesianGrid, XAxis, YAxis, Tooltip, Legend, Bar, LineChart, Line, } from "recharts";
 import * as XLSX from "xlsx";
+import Papa from "papaparse";
+import axios from "axios";
+import { parse, isValid, format } from "date-fns";
+
+const GOOGLE_SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSy0p8wdQ3l5656meByE6qLxZK-IPD5po164cIRb37n_jLKwOMg4-28AlPZOnjNjA/pub?gid=1331183736&single=true&output=csv";
 
 const App = () => {
-  const [data, setData] = useState(null);
+  const [excelData, setExcelData] = useState(null);
+  const [googleSheetData, setGoogleSheetData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [selectedMenu, setSelectedMenu] = useState("Summary");
@@ -28,24 +19,132 @@ const App = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [fileName, setFileName] = useState("");
   const [dateRange, setDateRange] = useState({ start: null, end: null });
+  const [googleSheetDateRange, setGoogleSheetDateRange] = useState({ start: null, end: null });
+  const [dataSource, setDataSource] = useState("file");
+  const [lastUpdated, setLastUpdated] = useState(null);
 
   useEffect(() => {
-    const storedData = localStorage.getItem("salesData");
-    if (storedData) {
-      const parsedData = JSON.parse(storedData);
-      const convertedDateRange = {
-        start: parsedData.dateRange?.start
-          ? new Date(parsedData.dateRange.start)
-          : null,
-        end: parsedData.dateRange?.end
-          ? new Date(parsedData.dateRange.end)
-          : null,
-      };
-      setData(parsedData.data);
+    const storedExcelData = localStorage.getItem("excelData");
+
+    if (storedExcelData) {
+      const parsedData = JSON.parse(storedExcelData);
+      setExcelData(parsedData.data);
       setFileName(parsedData.fileName || "Unknown File");
-      setDateRange(convertedDateRange);
+      setDateRange({
+        start: parsedData.dateRange?.start ? new Date(parsedData.dateRange.start) : null,
+        end: parsedData.dateRange?.end ? new Date(parsedData.dateRange.end) : null,
+      });
+      setDataSource("file");
     }
+
+    fetchGoogleSheetData();
   }, []);
+
+  const fetchGoogleSheetData = async () => {
+    setLoading(true);
+    setError(null);
+    setDataSource("google-sheet");
+
+    try {
+      const response = await axios.get(GOOGLE_SHEET_CSV_URL);
+      const csvText = response.data;
+      console.log("CSV Data:", csvText);
+
+      const parsedData = Papa.parse(csvText, { header: true, skipEmptyLines: true });
+      console.log("Parsed Data:", parsedData.data);
+
+      if (!parsedData.data || parsedData.data.length === 0) {
+        throw new Error("No data found in Google Sheet");
+      }
+
+      const mappedData = mapGoogleSheetData(parsedData.data);
+      console.log("Mapped Data:", mappedData);
+
+      const requiredColumns = [
+        "memberLocalName",
+        "memberId",
+        "totalAmount",
+        "orderCount",
+        "productName",
+        "productCode",
+        "branchTransactionCode",
+        "branchReceiveCode",
+        "purchaseDate",
+        "purchaseCode",
+        "purchaseChannel",
+        "purchaseType",
+        "totalThisPrice",
+      ];
+      const headers = Object.keys(mappedData[0]);
+      const missingColumns = requiredColumns.filter((col) => !headers.includes(col));
+      if (missingColumns.length > 0) {
+        throw new Error(`Missing columns: ${missingColumns.join(", ")}`);
+      }
+
+      const cleanedData = processGoogleSheetData(mappedData);
+      console.log("Cleaned Data:", cleanedData);
+
+      const purchaseDates = mappedData
+        .map((row) => parse(row["purchaseDate"], "M/d/yyyy HH:mm", new Date())) // ปรับรูปแบบวันที่ให้ตรงกับ "6/1/2025 23:21"
+        .filter((date) => isValid(date));
+      const start = purchaseDates.length > 0 ? new Date(Math.min(...purchaseDates)) : null;
+      const end = purchaseDates.length > 0 ? new Date(Math.max(...purchaseDates)) : null;
+      setGoogleSheetDateRange({ start, end });
+
+      setGoogleSheetData(cleanedData);
+      setLastUpdated(new Date());
+      setLoading(false);
+    } catch (err) {
+      console.error("Fetch Error:", err);
+      setError(`Error fetching Google Sheet: ${err.message}`);
+      setLoading(false);
+    }
+  };
+
+  const mapGoogleSheetData = (rows) => {
+    return rows.map((row) => ({
+      memberLocalName: row["CustomerName"] || "Unknown", // ยังไม่มีในข้อมูล อาจต้องเพิ่มใน Google Sheet
+      memberId: row["MemberID"] || "N/A", // ยังไม่มีในข้อมูล อาจต้องเพิ่มใน Google Sheet
+      totalAmount: parseFloat(row["Total Sales (All)"]) || 0, // ใช้ Total Sales (All) เป็นตัวแทนยอดขายรวม
+      orderCount: parseInt(row["Total Sales (All)"]) || 0, // ใช้ Total Sales (All) เป็นจำนวนการขาย
+      productName: row["Product Name"] || "Unknown",
+      productCode: row["SKU"] || "N/A",
+      branchTransactionCode: row["Branch"] || "N/A",
+      branchReceiveCode: row["BranchReceive"] || "N/A", // ยังไม่มีในข้อมูล อาจต้องเพิ่มใน Google Sheet
+      purchaseDate: row["date"] || "N/A",
+      purchaseCode: row["PurchaseCode"] || "N/A", // ยังไม่มีในข้อมูล อาจต้องเพิ่มใน Google Sheet
+      purchaseChannel: row["PurchaseChannel"] || "N/A", // ยังไม่มีในข้อมูล อาจต้องเพิ่มใน Google Sheet
+      purchaseType: row["PurchaseType"] || "Unknown", // ยังไม่มีในข้อมูล อาจต้องเพิ่มใน Google Sheet
+      totalThisPrice: parseFloat(row["Total Price (All)"]) || 0,
+    }));
+  };
+
+  const processGoogleSheetData = (rawData) => {
+    const quantityByProduct = {};
+
+    rawData.forEach((row) => {
+      if (!row["productName"] || row["productName"] === "Unknown") return;
+
+      const product = row["productName"];
+      const quantity = parseInt(row["orderCount"]) || 0;
+      const totalPrice = parseFloat(row["totalThisPrice"]) || 0;
+      const date = row["purchaseDate"];
+      const productCode = row["productCode"] || "N/A";
+
+      if (quantity > 0) {
+        quantityByProduct[product] = quantityByProduct[product] || {
+          quantity: 0,
+          totalPrice: 0,
+          date,
+          productId: productCode,
+        };
+        quantityByProduct[product].quantity += quantity;
+        quantityByProduct[product].totalPrice += totalPrice;
+      }
+    });
+
+    return { quantityByProduct };
+  };
 
   const menuItems = [
     "Summary",
@@ -54,6 +153,7 @@ const App = () => {
     "Products Promotion",
     "Sales by Branch",
     "Sales by Stockiest Branch",
+    "Google Sheets Data",
   ];
 
   const handleFileUpload = (event) => {
@@ -63,6 +163,7 @@ const App = () => {
     setLoading(true);
     setError(null);
     setFileName(file.name);
+    setDataSource("file");
 
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -79,14 +180,10 @@ const App = () => {
           const sheet = workbook.Sheets[sheetName];
           rawData = XLSX.utils.sheet_to_json(sheet, { header: 1 });
         } else {
-          throw new Error(
-            "Unsupported file format: Please use .xlsx, .xls, or .csv"
-          );
+          throw new Error("Unsupported file format: Please use .xlsx, .xls, or .csv");
         }
 
-        const headers = rawData[0].map((h) =>
-          h ? h.toString().trim().replace(/^"|"$/g, "") : ""
-        );
+        const headers = rawData[0].map((h) => (h ? h.toString().trim().replace(/^"|"$/g, "") : ""));
         const requiredColumns = [
           "memberLocalName",
           "memberId",
@@ -102,18 +199,14 @@ const App = () => {
           "purchaseType",
           "totalThisPrice",
         ];
-        const missingColumns = requiredColumns.filter(
-          (col) => !headers.includes(col)
-        );
+        const missingColumns = requiredColumns.filter((col) => !headers.includes(col));
         if (missingColumns.length > 0) {
           throw new Error("Missing columns: " + missingColumns.join(", "));
         }
 
         const dataRows = rawData.slice(1).map((row) =>
           row.reduce((obj, val, i) => {
-            obj[headers[i]] = val
-              ? val.toString().trim().replace(/^"|"$/g, "")
-              : "";
+            obj[headers[i]] = val ? val.toString().trim().replace(/^"|"$/g, "") : "";
             return obj;
           }, {})
         );
@@ -122,27 +215,21 @@ const App = () => {
 
         const purchaseDates = dataRows
           .map((row) => row["purchaseDate"])
-          .filter(
-            (date) => date && date !== "N/A" && !isNaN(new Date(date).getTime())
-          )
+          .filter((date) => date && date !== "N/A" && !isNaN(new Date(date).getTime()))
           .map((date) => new Date(date));
-        const validDates = purchaseDates.filter(
-          (date) => !isNaN(date.getTime())
-        );
-        const start =
-          validDates.length > 0 ? new Date(Math.min(...validDates)) : null;
-        const end =
-          validDates.length > 0 ? new Date(Math.max(...validDates)) : null;
-        const newDateRange = { start, end };
-        setDateRange(newDateRange);
+        const validDates = purchaseDates.filter((date) => !isNaN(date.getTime()));
+        const start = validDates.length > 0 ? new Date(Math.min(...validDates)) : null;
+        const end = validDates.length > 0 ? new Date(Math.max(...validDates)) : null;
+        setDateRange({ start, end });
 
-        setData(cleanedData);
+        setExcelData(cleanedData);
         localStorage.setItem(
-          "salesData",
+          "excelData",
           JSON.stringify({
             data: cleanedData,
             fileName: file.name,
-            dateRange: newDateRange,
+            dateRange: { start, end },
+            source: "file",
           })
         );
         setLoading(false);
@@ -165,8 +252,9 @@ const App = () => {
   };
 
   const clearLocalStorage = () => {
-    localStorage.removeItem("salesData");
-    setData(null);
+    localStorage.removeItem("excelData");
+    setExcelData(null);
+    setGoogleSheetData(null);
     setError(null);
     setLoading(false);
     setStartDate("");
@@ -174,13 +262,15 @@ const App = () => {
     setSearchQuery("");
     setFileName("");
     setDateRange({ start: null, end: null });
+    setGoogleSheetDateRange({ start: null, end: null });
+    setDataSource("file");
+    setLastUpdated(null);
+    fetchGoogleSheetData();
   };
 
   const parseCSV = (csvText) => {
     const rows = csvText.split(/\r?\n/);
-    return rows.map((row) =>
-      row.split(",").map((cell) => cell.trim().replace(/^"|"$/g, ""))
-    );
+    return rows.map((row) => row.split(",").map((cell) => cell.trim().replace(/^"|"$/g, "")));
   };
 
   const processAndCleanData = (rawData) => {
@@ -195,13 +285,7 @@ const App = () => {
     const purchaseTypeBreakdown = {};
 
     rawData.forEach((row) => {
-      // เงื่อนไขสำหรับส่วนอื่นๆ (ยังคงเหมือนเดิม)
-      if (
-        !row["memberLocalName"] ||
-        !row["branchTransactionCode"] ||
-        !row["purchaseCode"]
-      )
-        return;
+      if (!row["memberLocalName"] || !row["branchTransactionCode"] || !row["purchaseCode"]) return;
 
       const totalAmount = parseFloat(row["totalAmount"]) || 0;
       const totalThisPrice = parseFloat(row["totalThisPrice"]) || 0;
@@ -218,76 +302,37 @@ const App = () => {
       const purchaseType = row["purchaseType"] || "Unknown";
 
       purchaseCodes.add(purchaseCode);
-
-      // เงื่อนไขสำหรับ Total Purchase Bills (ใช้แค่ 2 เงื่อนไข)
-      if (row["purchaseCode"]) { // ตรวจสอบเฉพาะว่ามี purchaseCode
-        if (!purchaseChannel.startsWith("STOCKIEST")) {
-          nonStockiestPurchaseCodes.add(purchaseCode);
-
-          // นับตาม purchaseType
-          if (!purchaseTypeBreakdown[purchaseType]) {
-            purchaseTypeBreakdown[purchaseType] = new Set();
-          }
-          purchaseTypeBreakdown[purchaseType].add(purchaseCode);
-        }
+      if (!purchaseChannel.startsWith("STOCKIEST")) {
+        nonStockiestPurchaseCodes.add(purchaseCode);
+        purchaseTypeBreakdown[purchaseType] = purchaseTypeBreakdown[purchaseType] || new Set();
+        purchaseTypeBreakdown[purchaseType].add(purchaseCode);
       }
 
-      // ส่วนอื่นๆ ยังคงใช้เงื่อนไขเดิม
       if (totalAmount > 0 && !purchaseChannel.startsWith("STOCKIEST")) {
-        if (!salesByCustomer[customer]) {
-          salesByCustomer[customer] = {
-            amount: 0,
-            date: purchaseDate,
-            memberIds: new Set(),
-          };
-        }
+        salesByCustomer[customer] = salesByCustomer[customer] || { amount: 0, date: purchaseDate, memberIds: new Set() };
         salesByCustomer[customer].amount += totalAmount;
-        if (memberId !== "N/A") {
-          salesByCustomer[customer].memberIds.add(memberId);
-        }
+        if (memberId !== "N/A") salesByCustomer[customer].memberIds.add(memberId);
       }
-      if (
-        orderCount > 0 &&
-        product !== "Unknown" &&
-        !productCode.startsWith("P") &&
-        !branchReceive.startsWith("KS")
-      ) {
-        if (!quantityByProduct[product]) {
-          quantityByProduct[product] = {
-            quantity: 0,
-            totalPrice: 0,
-            date: purchaseDate,
-            productId: productCode
-          };
-        }
+
+      if (orderCount > 0 && product !== "Unknown" && !productCode.startsWith("P") && !branchReceive.startsWith("KS")) {
+        quantityByProduct[product] = quantityByProduct[product] || { quantity: 0, totalPrice: 0, date: purchaseDate, productId: productCode };
         quantityByProduct[product].quantity += orderCount;
         quantityByProduct[product].totalPrice += totalThisPrice;
       }
+
       if (totalAmount > 0) {
-        if (!salesByBranch[branch])
-          salesByBranch[branch] = { amount: 0, date: purchaseDate };
+        salesByBranch[branch] = salesByBranch[branch] || { amount: 0, date: purchaseDate };
         salesByBranch[branch].amount += totalAmount;
 
         if (purchaseDate !== "N/A" && !isNaN(new Date(purchaseDate).getTime())) {
           const dateKey = new Date(purchaseDate).toISOString().split("T")[0];
-          if (!salesByBranchDaily[branch]) {
-            salesByBranchDaily[branch] = {};
-          }
-          if (!salesByBranchDaily[branch][dateKey]) {
-            salesByBranchDaily[branch][dateKey] = 0;
-          }
-          salesByBranchDaily[branch][dateKey] += totalAmount;
+          salesByBranchDaily[branch] = salesByBranchDaily[branch] || {};
+          salesByBranchDaily[branch][dateKey] = (salesByBranchDaily[branch][dateKey] || 0) + totalAmount;
         }
       }
+
       if (orderCount > 0 && productCode.startsWith("P")) {
-        if (!quantityPProducts[product]) {
-          quantityPProducts[product] = {
-            quantity: 0,
-            totalPrice: 0,
-            date: purchaseDate,
-            productId: productCode
-          };
-        }
+        quantityPProducts[product] = quantityPProducts[product] || { quantity: 0, totalPrice: 0, date: purchaseDate, productId: productCode };
         quantityPProducts[product].quantity += orderCount;
         quantityPProducts[product].totalPrice += totalThisPrice;
         totalQuantityPProducts += orderCount;
@@ -309,7 +354,6 @@ const App = () => {
       dailySalesData.push(entry);
     });
 
-    // แปลง purchaseTypeBreakdown ให้เป็นออบเจ็กต์ที่เก็บจำนวน
     const purchaseTypeCounts = {};
     Object.entries(purchaseTypeBreakdown).forEach(([type, codes]) => {
       purchaseTypeCounts[type] = codes.size;
@@ -342,38 +386,28 @@ const App = () => {
   const filterBySearch = (dataArray, query) => {
     if (!query || !dataArray) return dataArray || [];
     const searchField = dataArray[0]?.branch ? "branch" : "name";
-    return dataArray.filter((item) =>
-      item[searchField].toLowerCase().includes(query.toLowerCase())
-    );
-  };
-
-  const formatDateForDisplay = (dateString) => {
-    if (dateString === "N/A") return "N/A";
-    const date = new Date(dateString);
-    return date.toISOString().split("T")[0];
+    return dataArray.filter((item) => item[searchField].toLowerCase().includes(query.toLowerCase()));
   };
 
   const formatDateRange = (range) => {
-    if (
-      !range.start ||
-      !range.end ||
-      !(range.start instanceof Date) ||
-      !(range.end instanceof Date) ||
-      isNaN(range.start.getTime()) ||
-      isNaN(range.end.getTime())
-    ) {
+    if (!range.start || !range.end || isNaN(range.start.getTime()) || isNaN(range.end.getTime())) {
       return "N/A";
     }
-    const start = range.start.toISOString().split("T")[0];
-    const end = range.end.toISOString().split("T")[0];
+    const start = range.start.toLocaleDateString("en-GB");
+    const end = range.end.toLocaleDateString("en-GB");
     return `${start} - ${end}`;
   };
 
-  if (!data) {
+  const formatLastUpdated = (date) => {
+    if (!date) return "Never";
+    return format(date, "dd/MM/yyyy HH:mm");
+  };
+
+  if (!excelData && !googleSheetData) {
     return (
       <div className="flex">
         <div className="sidebar relative">
-          <img src={scm_log} width={170} alt="logo" className="mb-5 pl-3" />
+          <img src="/SCM-Logo.png" width={170} alt="logo" className="mb-5 pl-3" />
           <ul>
             {menuItems.map((menu) => (
               <li
@@ -387,15 +421,24 @@ const App = () => {
                 {menu === "Products Promotion" && <FaTags size={20} className="inline mr-2" />}
                 {menu === "Sales by Branch" && <FaBuilding size={20} className="inline mr-2" />}
                 {menu === "Sales by Stockiest Branch" && <FaWarehouse size={20} className="inline mr-2" />}
+                {menu === "Google Sheets Data" && <FaFileDownload size={20} className="inline mr-2" />}
                 {menu}
               </li>
             ))}
           </ul>
-          <div className=" absolute px-2 bottom-2 w-full">
-            <p className="w-full py-4 px-4 border rounded-md  text-gray-700 bg-gray-50 border-gray-200 font-light">© Copyright by <span className="font-semibold">RON PHEAROM</span></p>
+          <div className="absolute px-2 bottom-2 w-full">
+            <p className="w-full py-4 px-4 border rounded-md text-gray-700 bg-gray-50 border-gray-200 font-light">
+              © Copyright by <span className="font-semibold">RON PHEAROM</span>
+            </p>
           </div>
         </div>
         <div className="content flex-1">
+          <div className="flex justify-center items-center h-[70vh]">
+            <div className="animate-spin rounded-full h-20 w-20 border-8 border-t-red-700 border-gray-200"></div>
+          </div>
+        </div>
+
+        {/* <div className="content flex-1">
           <div className="header bg-gradient-to-r from-green-700 to-green-500 text-white p-6 rounded-t-lg text-center">
             <h1 className="text-4xl font-semibold">Sales Report</h1>
           </div>
@@ -404,9 +447,11 @@ const App = () => {
               Upload File to View Report
             </h2>
             <div className="flex justify-between items-center border-2 p-10 rounded-md border-dotted border-gray-500">
-              <label className="flex justify-center items-center gap-1 hover:cursor-pointer ">
+              <label className="flex justify-center items-center gap-1 hover:cursor-pointer">
                 <FaFileExcel size={36} className="text-green-700" />
-                <p className="font-kantumruy text-xl border border-green-700 py-1 px-3 transition-all duration-200 rounded hover:bg-green-700 tra hover:text-white text-green-700 font-medium">ចុចត្រង់នេះដើម្បី​ Upload File</p>
+                <p className="font-kantumruy text-xl border border-green-700 py-1 px-3 transition-all duration-200 rounded hover:bg-green-700 tra hover:text-white text-green-700 font-medium">
+                  ចុចត្រង់នេះដើម្បី Upload File
+                </p>
                 <input
                   type="file"
                   accept=".xlsx,.xls,.csv"
@@ -416,25 +461,27 @@ const App = () => {
               </label>
               <div className="flex justify-center items-center gap-2 text-gray-600">
                 <FaFileCsv size={25} />
-                <FaFileExcel size={25} /> <FaFileAlt size={25} />
-                <p>Support File : .xlsx,.xls,.csv</p>
+                <FaFileExcel size={25} />
+                <FaFileAlt size={25} />
+                <p>Support File: .xlsx, .xls, .csv</p>
               </div>
             </div>
-
-            {error && (
-              <p className="error text-red-600 text-lg mt-4">{error}</p>
-            )}
-            {loading && <p className="loading text-lg mt-4">Loading data...</p>}
+            {error && <p className="error text-red-600 text-lg mt-4">{error}</p>}
+            {loading && <p className="loading text-lg mt-4">Loading Google Sheet data...</p>}
           </div>
           <div className="border border-gray-300 shadow-md rounded-xl">
-            <img src={how_to} alt="" className=" object-cover" />
+            <img src="/how_to_upoad_file-01.png" alt="" className="object-cover" />
           </div>
-        </div>
+        </div> */}
+
       </div>
     );
   }
 
-  const customerData = data
+  const data = selectedMenu === "Google Sheets Data" ? googleSheetData : excelData;
+  const currentDateRange = selectedMenu === "Google Sheets Data" ? googleSheetDateRange : dateRange;
+
+  const customerData = data && data.salesByCustomer
     ? Object.entries(data.salesByCustomer)
       .map(([name, { amount, date, memberIds }]) => {
         const memberIdArray = Array.from(memberIds);
@@ -449,123 +496,83 @@ const App = () => {
           }
         });
 
-        return {
-          name,
-          amount,
-          date,
-          memberId,
-          stockiestId,
-        };
+        return { name, amount, date, memberId, stockiestId };
       })
       .sort((a, b) => b.amount - a.amount)
     : [];
-  const productData = data
+
+  const productData = data && data.quantityByProduct
     ? Object.entries(data.quantityByProduct)
       .map(([name, { quantity, totalPrice, date, productId }]) => ({
         name,
         quantity,
         totalPrice: totalPrice.toFixed(2),
         date,
-        productId
+        productId,
       }))
       .sort((a, b) => b.quantity - a.quantity)
     : [];
-  const pProductData = data
+
+  const pProductData = data && data.quantityPProducts
     ? Object.entries(data.quantityPProducts)
       .map(([name, { quantity, totalPrice, date, productId }]) => ({
         name,
         quantity,
         totalPrice: totalPrice.toFixed(2),
         date,
-        productId
+        productId,
       }))
       .sort((a, b) => b.quantity - a.quantity)
     : [];
-  const branchData = data
+
+  const branchData = data && data.salesByBranch
     ? Object.entries(data.salesByBranch)
       .map(([branch, { amount, date }]) => ({ branch, amount, date }))
       .sort((a, b) => b.amount - a.amount)
     : [];
 
-  const customerTop10 = filterByDate(
-    filterBySearch(customerData, searchQuery),
-    startDate,
-    endDate
-  ).slice(0, 10);
-  const productTop10 = filterByDate(
-    filterBySearch(productData, searchQuery),
-    startDate,
-    endDate
-  ).slice(0, 10);
-  const pProductTop10 = filterByDate(
-    filterBySearch(pProductData, searchQuery),
-    startDate,
-    endDate
-  ).slice(0, 10);
+  const customerTop10 = filterByDate(filterBySearch(customerData, searchQuery), startDate, endDate).slice(0, 10);
+  const productTop10 = filterByDate(filterBySearch(productData, searchQuery), startDate, endDate).slice(0, 10);
+  const pProductTop10 = filterByDate(filterBySearch(pProductData, searchQuery), startDate, endDate).slice(0, 10);
+  const googleSheetProductTop10 = filterByDate(filterBySearch(productData, searchQuery), startDate, endDate).slice(0, 10);
   const branchTop10 = filterByDate(
     filterBySearch(
-      branchData.filter(
-        (item) =>
-          item.branch.startsWith("PNH01") || item.branch.startsWith("KCM01")
-      ),
+      branchData.filter((item) => item.branch.startsWith("PNH01") || item.branch.startsWith("KCM01")),
       searchQuery
     ),
     startDate,
     endDate
   ).slice(0, 10);
   const stockiestBranchTop10 = filterByDate(
-    filterBySearch(
-      branchData.filter((item) => item.branch.startsWith("KS")),
-      searchQuery
-    ),
+    filterBySearch(branchData.filter((item) => item.branch.startsWith("KS")), searchQuery),
     startDate,
     endDate
   ).slice(0, 10);
 
-  const customerAll = filterByDate(
-    filterBySearch(customerData, searchQuery),
-    startDate,
-    endDate
-  );
-  const productAll = filterByDate(
-    filterBySearch(productData, searchQuery),
-    startDate,
-    endDate
-  );
-  const pProductAll = filterByDate(
-    filterBySearch(pProductData, searchQuery),
-    startDate,
-    endDate
-  );
+  const customerAll = filterByDate(filterBySearch(customerData, searchQuery), startDate, endDate);
+  const productAll = filterByDate(filterBySearch(productData, searchQuery), startDate, endDate);
+  const pProductAll = filterByDate(filterBySearch(pProductData, searchQuery), startDate, endDate);
+  const googleSheetProductAll = filterByDate(filterBySearch(productData, searchQuery), startDate, endDate);
   const branchAll = filterByDate(
     filterBySearch(
-      branchData.filter(
-        (item) =>
-          item.branch.startsWith("PNH01") || item.branch.startsWith("KCM01")
-      ),
+      branchData.filter((item) => item.branch.startsWith("PNH01") || item.branch.startsWith("KCM01")),
       searchQuery
     ),
     startDate,
     endDate
   );
   const stockiestBranchAll = filterByDate(
-    filterBySearch(
-      branchData.filter((item) => item.branch.startsWith("KS")),
-      searchQuery
-    ),
+    filterBySearch(branchData.filter((item) => item.branch.startsWith("KS")), searchQuery),
     startDate,
     endDate
   );
 
-  const totalSales = data
+  const totalSales = data && data.salesByCustomer
     ? Object.values(data.salesByCustomer)
       .reduce((sum, val) => sum + val.amount, 0)
       .toFixed(2)
     : "0.00";
-  const topProduct =
-    data && productData.length > 0
-      ? productData[0]
-      : { name: "N/A", quantity: 0 };
+  const topProduct = data && productData.length > 0 ? productData[0] : { name: "N/A", quantity: 0 };
 
   const summaryData = {
     "Sales by Customer": {
@@ -599,11 +606,17 @@ const App = () => {
       bgColor: "bg-teal-100",
     },
     "Total Purchase Bills": {
-      total: data.nonStockiestPurchaseCount || 0,
-      purchaseTypeCounts: data.purchaseTypeCounts || {},
+      total: data?.nonStockiestPurchaseCount || 0,
+      purchaseTypeCounts: data?.purchaseTypeCounts || {},
       icon: <FaFileInvoice size={30} className="text-yellow-600" />,
       bgColor: "bg-yellow-100",
     },
+    // "Google Sheets Data": {
+    //   total: googleSheetProductAll.reduce((sum, item) => sum + item.quantity, 0),
+    //   count: googleSheetProductAll.length,
+    //   icon: <FaFileDownload size={30} className="text-indigo-600" />,
+    //   bgColor: "bg-indigo-100",
+    // },
   };
 
   const renderContent = () => {
@@ -629,9 +642,13 @@ const App = () => {
                       <div>
                         <p className="text-gray-600">Total Non-Stockiest Bills: {total}</p>
                         <div className="flex justify-between">
-                          {Object.entries(purchaseTypeCounts).slice(0, 3).map(([type, count]) => (
-                            <div key={type} className="text-gray-600 gap-2 px-2">{type}: {count}</div>
-                          ))}
+                          {Object.entries(purchaseTypeCounts)
+                            .slice(0, 3)
+                            .map(([type, count]) => (
+                              <div key={type} className="text-gray-600 gap-2 px-2">
+                                {type}: {count}
+                              </div>
+                            ))}
                           {Object.keys(purchaseTypeCounts).length > 3 && (
                             <p className="text-gray-600">And more...</p>
                           )}
@@ -640,16 +657,21 @@ const App = () => {
                     ) : (
                       <>
                         <p className="text-gray-600">
-                          {menu.includes("Sales") ? `Total Sales: $ ${total} USD` :
-                            menu === "Products Promotion" ? `Total Quantity: ${total} Sets` :
-                              `Total Quantity: ${total} units`}
+                          {menu.includes("Sales") ? `Total Sales: $ ${total} USD` : `Total Quantity: ${total} ${menu === "Products Promotion" ? "Sets" : "units"}`}
                         </p>
                         <p className="text-gray-600">
-                          {menu === "Sales by Customer" ? "Member Counts :" :
-                            menu === "Quantity Sold by Product" ? "Product Items :" :
-                              menu === "Products Promotion" ? "Product Codes :" :
-                                menu === "Sales by Branch" ? "Branch :" :
-                                  menu === "Sales by Stockiest Branch" ? "Stockiests :" : "Items :"} {count}
+                          {menu === "Sales by Customer"
+                            ? "Member Counts :"
+                            : menu === "Quantity Sold by Product"
+                              ? "Product Items :"
+                              : menu === "Products Promotion"
+                                ? "Product Codes :"
+                                : menu === "Sales by Branch"
+                                  ? "Branch :"
+                                  : menu === "Sales by Stockiest Branch"
+                                    ? "Stockiests :"
+                                    : "Items :"}{" "}
+                          {count}
                         </p>
                       </>
                     )}
@@ -665,9 +687,7 @@ const App = () => {
         return (
           <div className="section bg-white p-6 rounded-lg shadow-lg mb-8 border border-gray-300">
             <div className="flex justify-between mb-4">
-              <h2 className="text-2xl font-semibold text-gray-700">
-                Sales by Customer : Top 10
-              </h2>
+              <h2 className="text-2xl font-semibold text-gray-700">Sales by Customer: Top 10</h2>
               <div>
                 <input
                   type="text"
@@ -681,19 +701,9 @@ const App = () => {
             <ResponsiveContainer width="100%" height={400}>
               <BarChart data={filteredDataGraph}>
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis
-                  dataKey="name"
-                  angle={-45}
-                  textAnchor="end"
-                  fontSize={12}
-                />
+                <XAxis dataKey="name" angle={-45} textAnchor="end" fontSize={12} />
                 <YAxis
-                  label={{
-                    value: "Sales (USD)",
-                    angle: -90,
-                    position: "insideLeft",
-                    fontSize: 12,
-                  }}
+                  label={{ value: "Sales (USD)", angle: -90, position: "insideLeft", fontSize: 12 }}
                   fontSize={12}
                 />
                 <Tooltip formatter={(value) => `$ ${value.toFixed(2)}`} />
@@ -725,9 +735,7 @@ const App = () => {
                     </tbody>
                   </table>
                 </div>
-                <p className="mt-4 font-semibold text-xl">
-                  Member Total : {filteredDataTable.length} ID
-                </p>
+                <p className="mt-4 font-semibold text-xl">Member Total: {filteredDataTable.length} ID</p>
               </div>
             )}
           </div>
@@ -739,7 +747,7 @@ const App = () => {
           <div className="section bg-white p-6 rounded-lg shadow-lg mb-8 border border-gray-300">
             <div className="flex justify-between mb-4">
               <h2 className="text-2xl font-semibold text-gray-700">
-                Quantity Sold by Product : Top 10 <span className="text-red-600">(Not including promotions)</span>
+                Quantity Sold by Product: Top 10 <span className="text-red-600">(Not including promotions)</span>
               </h2>
               <div>
                 <input
@@ -754,25 +762,12 @@ const App = () => {
             <ResponsiveContainer width="100%" height={400}>
               <BarChart data={filteredDataGraph}>
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis
-                  dataKey="name"
-                  angle={-45}
-                  textAnchor="end"
-                  fontSize={12}
-                />
+                <XAxis dataKey="name" angle={-45} textAnchor="end" fontSize={12} />
                 <YAxis
-                  label={{
-                    value: "Quantity",
-                    angle: -90,
-                    position: "insideLeft",
-                    fontSize: 12,
-                  }}
+                  label={{ value: "Quantity", angle: -90, position: "insideLeft", fontSize: 12 }}
                   fontSize={12}
                 />
-                <Tooltip formatter={(value) => {
-                  const numericValue = typeof value === 'number' ? value : parseInt(value) || 0;
-                  return numericValue;
-                }} />
+                <Tooltip formatter={(value) => (typeof value === "number" ? value : parseInt(value) || 0)} />
                 <Legend />
                 <Bar dataKey="quantity" fill="#10B981" name="Quantity" />
               </BarChart>
@@ -801,9 +796,7 @@ const App = () => {
                     </tbody>
                   </table>
                 </div>
-                <p className="mt-4 font-semibold text-xl">
-                  Products Items : {filteredDataTable.length} Items
-                </p>
+                <p className="mt-4 font-semibold text-xl">Products Items: {filteredDataTable.length} Items</p>
               </div>
             )}
           </div>
@@ -814,9 +807,7 @@ const App = () => {
         return (
           <div className="section bg-white p-6 rounded-lg shadow-lg mb-8 border border-gray-300">
             <div className="flex justify-between mb-4">
-              <h2 className="text-2xl font-semibold text-gray-700">
-                Quantity of Products Promotion Top 10
-              </h2>
+              <h2 className="text-2xl font-semibold text-gray-700">Quantity of Products Promotion Top 10</h2>
               <div>
                 <input
                   type="text"
@@ -830,25 +821,12 @@ const App = () => {
             <ResponsiveContainer width="100%" height={400}>
               <BarChart data={filteredDataGraph}>
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis
-                  dataKey="name"
-                  angle={-45}
-                  textAnchor="end"
-                  fontSize={12}
-                />
+                <XAxis dataKey="name" angle={-45} textAnchor="end" fontSize={12} />
                 <YAxis
-                  label={{
-                    value: "Quantity",
-                    angle: -90,
-                    position: "insideLeft",
-                    fontSize: 12,
-                  }}
+                  label={{ value: "Quantity", angle: -90, position: "insideLeft", fontSize: 12 }}
                   fontSize={12}
                 />
-                <Tooltip formatter={(value) => {
-                  const numericValue = typeof value === 'number' ? value : parseInt(value) || 0;
-                  return numericValue;
-                }} />
+                <Tooltip formatter={(value) => (typeof value === "number" ? value : parseInt(value) || 0)} />
                 <Legend />
                 <Bar dataKey="quantity" fill="#F97316" name="Quantity" />
               </BarChart>
@@ -877,15 +855,13 @@ const App = () => {
                     </tbody>
                   </table>
                 </div>
-                <p className="mt-4 font-semibold text-xl">
-                  Promotion Items : {filteredDataTable.length} Items
-                </p>
+                <p className="mt-4 font-semibold text-xl">Promotion Items: {filteredDataTable.length} Items</p>
               </div>
             )}
           </div>
         );
       case "Sales by Branch":
-        filteredDataGraph = data.salesByBranchDaily;
+        filteredDataGraph = data?.salesByBranchDaily || [];
         filteredDataTable = branchAll;
 
         const filteredGraphData = filterByDate(
@@ -893,10 +869,7 @@ const App = () => {
             filteredDataGraph.map((item) => {
               const filteredItem = { date: item.date };
               Object.keys(item).forEach((key) => {
-                if (
-                  key !== "date" &&
-                  (key.startsWith("PNH01") || key.startsWith("KCM01"))
-                ) {
+                if (key !== "date" && (key.startsWith("PNH01") || key.startsWith("KCM01"))) {
                   filteredItem[key] = item[key];
                 }
               });
@@ -911,9 +884,7 @@ const App = () => {
         return (
           <div className="section bg-white p-6 rounded-lg shadow-lg mb-8 border border-gray-300">
             <div className="flex justify-between mb-4">
-              <h2 className="text-2xl font-semibold text-gray-700">
-                Daily Sales Trend by Branch
-              </h2>
+              <h2 className="text-2xl font-semibold text-gray-700">Daily Sales Trend by Branch</h2>
               <div>
                 <input
                   type="text"
@@ -982,9 +953,7 @@ const App = () => {
         return (
           <div className="section bg-white p-6 rounded-lg shadow-lg mb-8 border border-gray-300">
             <div className="flex justify-between mb-4">
-              <h2 className="text-2xl font-semibold text-gray-700">
-                Sales by Stockiest Branch
-              </h2>
+              <h2 className="text-2xl font-semibold text-gray-700">Sales by Stockiest Branch</h2>
               <div>
                 <input
                   type="text"
@@ -1000,12 +969,7 @@ const App = () => {
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="branch" fontSize={12} />
                 <YAxis
-                  label={{
-                    value: "Sales (USD)",
-                    angle: -90,
-                    position: "insideLeft",
-                    fontSize: 12,
-                  }}
+                  label={{ value: "Sales (USD)", angle: -90, position: "insideLeft", fontSize: 12 }}
                   fontSize={12}
                 />
                 <Tooltip formatter={(value) => `$ ${value.toFixed(2)}`} />
@@ -1035,6 +999,80 @@ const App = () => {
             )}
           </div>
         );
+      case "Google Sheets Data":
+        filteredDataGraph = googleSheetProductTop10;
+        filteredDataTable = googleSheetProductAll;
+        return (
+          <div className="section bg-white p-6 rounded-lg shadow-lg mb-8 border border-gray-300">
+            <div className="flex justify-between mb-4">
+              <h2 className="text-2xl font-semibold text-gray-700">All Quantity <span className="text-green-800">(includes promotions)</span></h2>
+              <div className="flex items-center gap-4">
+                <p className="text-gray-600">Date Range: <span className="font-semibold">{formatDateRange(googleSheetDateRange)}</span></p>
+                {/* <p className="text-gray-600">Last Updated: <span className="font-semibold">{formatLastUpdated(lastUpdated)}</span></p> */}
+                <button
+                  onClick={fetchGoogleSheetData}
+                  className="flex items-center gap-1 px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 cursor-pointer"
+                >
+                  <FaSyncAlt size={16} />
+                  Refresh Data
+                </button>
+                <input
+                  type="text"
+                  placeholder="Search products..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="p-2 border rounded"
+                />
+              </div>
+            </div>
+            {filteredDataGraph.length === 0 ? (
+              <p className="text-center text-gray-600">No data available</p>
+            ) : (
+              <ResponsiveContainer width="100%" height={400}>
+                <BarChart data={filteredDataGraph}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="name" angle={-45} textAnchor="end" fontSize={12} />
+                  <YAxis
+                    label={{ value: "Quantity", angle: -90, position: "insideLeft", fontSize: 12 }}
+                    fontSize={12}
+                  />
+                  <Tooltip formatter={(value) => (typeof value === "number" ? value : parseInt(value) || 0)} />
+                  <Legend />
+                  <Bar dataKey="quantity" fill="#4B0082" name="Quantity" />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+            {googleSheetProductAll.length > 0 && (
+              <div>
+                <div className="scroll-table">
+                  <table>
+                    <thead className="google-sheet">
+                      <tr>
+                        <th>Product ID</th>
+                        <th>Product</th>
+                        <th>Quantity</th>
+                        {/* <th>Total Price (USD)</th>
+                        <th>Total Price (All)</th> */}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredDataTable.map((item) => (
+                        <tr key={item.name}>
+                          <td>{item.productId}</td>
+                          <td>{item.name}</td>
+                          <td>{item.quantity}</td>
+                          {/* <td>{item.totalPrice}</td>
+                          <td>{item.totalPrice}</td> */}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <p className="mt-4 font-semibold text-xl">Product Items: {filteredDataTable.length} Items</p>
+              </div>
+            )}
+          </div>
+        );
       default:
         return null;
     }
@@ -1043,7 +1081,7 @@ const App = () => {
   return (
     <div className="flex">
       <div className="sidebar relative">
-        <img src={scm_log} width={170} alt="logo" className="mb-5 pl-3" />
+        <img src="/SCM-Logo.png" width={170} alt="logo" className="mb-5 pl-3" />
         <ul>
           {menuItems.map((menu) => (
             <li
@@ -1057,21 +1095,26 @@ const App = () => {
               {menu === "Products Promotion" && <FaTags size={20} className="inline mr-2" />}
               {menu === "Sales by Branch" && <FaBuilding size={20} className="inline mr-2" />}
               {menu === "Sales by Stockiest Branch" && <FaWarehouse size={20} className="inline mr-2" />}
+              {menu === "Google Sheets Data" && <FaFileDownload size={20} className="inline mr-2" />}
               {menu}
             </li>
           ))}
         </ul>
-        <div className=" absolute px-2 bottom-2 w-full">
-          <p className="w-full py-4 px-4 border rounded-md  text-gray-700 bg-gray-50 border-gray-200 font-light">© Copyright by <span className="font-semibold">RON PHEAROM</span></p>
+        <div className="absolute px-2 bottom-2 w-full">
+          <p className="w-full py-4 px-4 border rounded-md text-gray-700 bg-gray-50 border-gray-200 font-light">
+            © Copyright by <span className="font-semibold">RON PHEAROM</span>
+          </p>
         </div>
       </div>
       <div className="content flex-1">
         <div className="upload-section bg-white p-6 rounded-lg shadow-lg mb-8 text-center justify-between flex gap-4 border border-gray-300">
           <div className="flex gap-2">
             <div className="flex justify-center items-center gap-1">
-              <label className="flex justify-center items-center gap-1 hover:cursor-pointer ">
+              <label className="flex justify-center items-center gap-1 hover:cursor-pointer">
                 <FaFileExcel size={36} className="text-green-700" />
-                <p className="font-kantumruy md:text-[1rem]  lg:text-[1.1rem] border border-green-700 py-2 px-3 transition-all duration-200 rounded hover:bg-green-700 tra hover:text-white text-green-700 font-medium">ចុចត្រង់នេះដើម្បី​ Upload File</p>
+                <p className="font-kantumruy md:text-[1rem] lg:text-[1.1rem] border border-green-700 py-2 px-3 transition-all duration-200 rounded hover:bg-green-700 tra hover:text-white text-green-700 font-medium">
+                  ចុចត្រង់នេះដើម្បី Upload File
+                </p>
                 <input
                   type="file"
                   accept=".xlsx,.xls,.csv"
@@ -1087,15 +1130,21 @@ const App = () => {
               Clear Data
             </button>
           </div>
-          <div className="header bg-gradient-to-r lg:text-[12px] from-green-700 to-green-500 py-2 px-3 text-white rounded flex items-center justify-center ">
+          <div className="header bg-gradient-to-r lg:text-[12px] from-green-700 to-green-500 py-2 px-3 text-white rounded flex items-center justify-center">
             <div>
               <div className="flex gap-2">
-                <p>File Name : <span className="font-semibold">{fileName || "N/A"} |{" "}</span> </p>
-                <p>Date Range: <span className="font-semibold">{formatDateRange(dateRange)}</span> </p>
+                {/* <p>
+                  Source: <span className="font-semibold">{dataSource === "google-sheet" ? "Google Sheet" : fileName || "N/A"}</span> |{" "}
+                </p> */}
+                <p>
+                  Date Range: <span className="font-semibold">{formatDateRange(currentDateRange)}</span>
+                </p>
               </div>
             </div>
           </div>
         </div>
+        {error && <p className="error text-red-600 text-lg mb-4 text-center">{error}</p>}
+        {loading && <p className="loading text-lg mb-4 text-center">Loading data...</p>}
         {renderContent()}
       </div>
     </div>

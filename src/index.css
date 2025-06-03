@@ -64,21 +64,6 @@ body {
   z-index: 1;
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 .scroll-table th,
 .scroll-table td {
   padding: 0.5rem;
@@ -146,4 +131,29 @@ body {
   margin-left: 270px;
   padding: 1rem;
   
+}
+
+.google-sheet th {
+  background-color: #e0e7ff;
+  color: #4B0082;
+  padding: 8px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+th, td {
+  padding: 8px;
+  text-align: left;
+  border-bottom: 1px solid #ddd;
+}
+
+
+.scroll-table .google-sheet {
+  position: sticky;
+  top: 0;
+  background-color: #8b5cf6;
+  color: #ffffff;
+  z-index: 1;
 }
