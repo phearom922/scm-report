@@ -698,14 +698,14 @@ const App = () => {
                           {menu === "Sales by Customer"
                             ? "Member Counts :"
                             : menu === "Quantity Sold by Product"
-                            ? "Product Items :"
-                            : menu === "Products Promotion"
-                            ? "Product Codes :"
-                            : menu === "Sales by Branch"
-                            ? "Branch :"
-                            : menu === "Sales by Stockiest Branch"
-                            ? "Stockiests :"
-                            : "Items :"}{" "}
+                              ? "Product Items :"
+                              : menu === "Products Promotion"
+                                ? "Product Codes :"
+                                : menu === "Sales by Branch"
+                                  ? "Branch :"
+                                  : menu === "Sales by Stockiest Branch"
+                                    ? "Stockiests :"
+                                    : "Items :"}{" "}
                           {count}
                         </p>
                       </>
@@ -830,7 +830,7 @@ const App = () => {
                 <Bar dataKey="quantity" fill="#10B981" name="Quantity" />
               </BarChart>
             </ResponsiveContainer>
-            {productDataWithCustomer.length > 0 && (
+            {productDataWithCustomer.length > 0 ? (
               <div>
                 <h3 className="text-xl font-semibold text-gray-700 mt-4">Filtered Results</h3>
                 <div className="scroll-table">
@@ -859,7 +859,26 @@ const App = () => {
                 </div>
                 <p className="mt-4 font-semibold text-xl">Filtered Items: {filteredDataTable.length} Entries</p>
               </div>
-            )}
+            ) : (<div>
+              <h3 className="text-xl font-semibold text-gray-700 mt-4">Filtered Results</h3>
+              <div className="scroll-table">
+                <table className="w-full">
+                  <thead className="sold-product">
+                    <tr>
+                      <th>Product ID</th>
+                      <th>Product</th>
+                      <th>Customer</th>
+                      <th>Quantity</th>
+                      <th>Total Price (USD)</th>
+                    </tr>
+                  </thead>
+                </table>
+                <div className="w-full justify-center items-center ">
+                  <div className=" bg-red-200 text-red-600 py-5 text-center">No data available for the selected filters.</div>
+                </div>
+              </div>
+              <p className="mt-4 font-semibold text-xl">Filtered Items: {filteredDataTable.length} Entries</p>
+            </div>)}
             {totalDataTable.length > 0 && (
               <div>
                 <h3 className="text-xl font-semibold text-gray-700 mt-6">Total Summary</h3>
