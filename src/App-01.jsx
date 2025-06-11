@@ -1,53 +1,152 @@
 import React, { useState, useEffect } from "react";
-import { FaFileExcel, FaFileCsv, FaFileAlt } from "react-icons/fa";
-import { FaChartPie, FaUsers, FaBox, FaTags, FaBuilding, FaWarehouse } from "react-icons/fa";
-import scm_log from "/SCM-Logo.png";
-
-import {
-  ResponsiveContainer,
-  LineChart,
-  CartesianGrid,
-  XAxis,
-  YAxis,
-  Tooltip,
-  Legend,
-  Line,
-  BarChart,
-  Bar,
-} from "recharts";
+import { FaFileExcel, FaFileCsv, FaFileAlt, FaChartPie, FaUsers, FaBox, FaTags, FaBuilding, FaWarehouse, FaFileDownload, FaSyncAlt, FaFileInvoice } from "react-icons/fa";
+import { ResponsiveContainer, BarChart, CartesianGrid, XAxis, YAxis, Tooltip, Legend, Bar, LineChart, Line } from "recharts";
 import * as XLSX from "xlsx";
+import Papa from "papaparse";
+import axios from "axios";
+import { parse, isValid, format } from "date-fns";
+
+const GOOGLE_SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSy0p8wdQ3l5656meByE6qLxZK-IPD5po164cIRb37n_jLKwOMg4-28AlPZOnjNjA/pub?gid=1331183736&single=true&output=csv";
 
 const App = () => {
-  const [data, setData] = useState(null);
+  const [excelData, setExcelData] = useState(null);
+  const [googleSheetData, setGoogleSheetData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [selectedMenu, setSelectedMenu] = useState("Summary");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
-  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedProduct, setSelectedProduct] = useState("");
+  const [selectedCustomer, setSelectedCustomer] = useState("");
   const [fileName, setFileName] = useState("");
   const [dateRange, setDateRange] = useState({ start: null, end: null });
+  const [googleSheetDateRange, setGoogleSheetDateRange] = useState({ start: null, end: null });
+  const [dataSource, setDataSource] = useState("file");
+  const [lastUpdated, setLastUpdated] = useState(null);
 
-  // Load data from Local Storage on app start
   useEffect(() => {
-    const storedData = localStorage.getItem("salesData");
-    if (storedData) {
-      const parsedData = JSON.parse(storedData);
-      const convertedDateRange = {
-        start: parsedData.dateRange?.start
-          ? new Date(parsedData.dateRange.start)
-          : null,
-        end: parsedData.dateRange?.end
-          ? new Date(parsedData.dateRange.end)
-          : null,
-      };
-      setData(parsedData.data);
+    const storedExcelData = localStorage.getItem("excelData");
+
+    if (storedExcelData) {
+      const parsedData = JSON.parse(storedExcelData);
+      setExcelData(parsedData.data);
       setFileName(parsedData.fileName || "Unknown File");
-      setDateRange(convertedDateRange);
+      setDateRange({
+        start: parsedData.dateRange?.start ? new Date(parsedData.dateRange.start) : null,
+        end: parsedData.dateRange?.end ? new Date(parsedData.dateRange.end) : null,
+      });
+      setDataSource("file");
     }
+
+    fetchGoogleSheetData();
   }, []);
 
-  // Sidebar menu items
+  const fetchGoogleSheetData = async () => {
+    setLoading(true);
+    setError(null);
+    setDataSource("google-sheet");
+
+    try {
+      const response = await axios.get(GOOGLE_SHEET_CSV_URL);
+      const csvText = response.data;
+      console.log("CSV Data:", csvText);
+
+      const parsedData = Papa.parse(csvText, { header: true, skipEmptyLines: true });
+      console.log("Parsed Data:", parsedData.data);
+
+      if (!parsedData.data || parsedData.data.length === 0) {
+        throw new Error("No data found in Google Sheet");
+      }
+
+      const mappedData = mapGoogleSheetData(parsedData.data);
+      console.log("Mapped Data:", mappedData);
+
+      const requiredColumns = [
+        "memberLocalName",
+        "memberId",
+        "totalAmount",
+        "orderCount",
+        "productName",
+        "productCode",
+        "branchTransactionCode",
+        "branchReceiveCode",
+        "purchaseDate",
+        "purchaseCode",
+        "purchaseChannel",
+        "purchaseType",
+        "totalThisPrice",
+      ];
+      const headers = Object.keys(mappedData[0]);
+      const missingColumns = requiredColumns.filter((col) => !headers.includes(col));
+      if (missingColumns.length > 0) {
+        throw new Error(`Missing columns: ${missingColumns.join(", ")}`);
+      }
+
+      const cleanedData = processGoogleSheetData(mappedData);
+      console.log("Cleaned Data:", cleanedData);
+
+      const purchaseDates = mappedData
+        .map((row) => parse(row["purchaseDate"], "M/d/yyyy HH:mm", new Date()))
+        .filter((date) => isValid(date));
+      const start = purchaseDates.length > 0 ? new Date(Math.min(...purchaseDates)) : null;
+      const end = purchaseDates.length > 0 ? new Date(Math.max(...purchaseDates)) : null;
+      setGoogleSheetDateRange({ start, end });
+
+      setGoogleSheetData(cleanedData);
+      setLastUpdated(new Date());
+      setLoading(false);
+    } catch (err) {
+      console.error("Fetch Error:", err);
+      setError(`Error fetching Google Sheet: ${err.message}`);
+      setLoading(false);
+    }
+  };
+
+  const mapGoogleSheetData = (rows) => {
+    return rows.map((row) => ({
+      memberLocalName: row["CustomerName"] || "Unknown",
+      memberId: row["MemberID"] || "N/A",
+      totalAmount: parseFloat(row["Total Sales (All)"]) || 0,
+      orderCount: parseInt(row["Total Sales (All)"]) || 0,
+      productName: row["Product Name"] || "Unknown",
+      productCode: row["SKU"] || "N/A",
+      branchTransactionCode: row["Branch"] || "N/A",
+      branchReceiveCode: row["BranchReceive"] || "N/A",
+      purchaseDate: row["date"] || "N/A",
+      purchaseCode: row["PurchaseCode"] || "N/A",
+      purchaseChannel: row["PurchaseChannel"] || "N/A",
+      purchaseType: row["PurchaseType"] || "Unknown",
+      totalThisPrice: parseFloat(row["Total Price (All)"]) || 0,
+    }));
+  };
+
+  const processGoogleSheetData = (rawData) => {
+    const quantityByProduct = {};
+
+    rawData.forEach((row) => {
+      if (!row["productName"] || row["productName"] === "Unknown") return;
+
+      const product = row["productName"];
+      const quantity = parseInt(row["orderCount"]) || 0;
+      const totalPrice = parseFloat(row["totalThisPrice"]) || 0;
+      const date = row["purchaseDate"];
+      const productCode = row["productCode"] || "N/A";
+
+      if (quantity > 0) {
+        quantityByProduct[product] = quantityByProduct[product] || {
+          quantity: 0,
+          totalPrice: 0,
+          date,
+          productId: productCode,
+        };
+        quantityByProduct[product].quantity += quantity;
+        quantityByProduct[product].totalPrice += totalPrice;
+      }
+    });
+
+    return { quantityByProduct };
+  };
+
   const menuItems = [
     "Summary",
     "Sales by Customer",
@@ -55,9 +154,9 @@ const App = () => {
     "Products Promotion",
     "Sales by Branch",
     "Sales by Stockiest Branch",
+    "Google Sheets Data",
   ];
 
-  // Handle Excel and CSV file upload
   const handleFileUpload = (event) => {
     const file = event.target.files[0];
     if (!file) return;
@@ -65,6 +164,7 @@ const App = () => {
     setLoading(true);
     setError(null);
     setFileName(file.name);
+    setDataSource("file");
 
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -81,14 +181,10 @@ const App = () => {
           const sheet = workbook.Sheets[sheetName];
           rawData = XLSX.utils.sheet_to_json(sheet, { header: 1 });
         } else {
-          throw new Error(
-            "Unsupported file format: Please use .xlsx, .xls, or .csv"
-          );
+          throw new Error("Unsupported file format: Please use .xlsx, .xls, or .csv");
         }
 
-        const headers = rawData[0].map((h) =>
-          h ? h.toString().trim().replace(/^"|"$/g, "") : ""
-        );
+        const headers = rawData[0].map((h) => (h ? h.toString().trim().replace(/^"|"$/g, "") : ""));
         const requiredColumns = [
           "memberLocalName",
           "memberId",
@@ -101,49 +197,40 @@ const App = () => {
           "purchaseDate",
           "purchaseCode",
           "purchaseChannel",
+          "purchaseType",
+          "totalThisPrice",
         ];
-        const missingColumns = requiredColumns.filter(
-          (col) => !headers.includes(col)
-        );
+        const missingColumns = requiredColumns.filter((col) => !headers.includes(col));
         if (missingColumns.length > 0) {
           throw new Error("Missing columns: " + missingColumns.join(", "));
         }
 
         const dataRows = rawData.slice(1).map((row) =>
           row.reduce((obj, val, i) => {
-            obj[headers[i]] = val
-              ? val.toString().trim().replace(/^"|"$/g, "")
-              : "";
+            obj[headers[i]] = val ? val.toString().trim().replace(/^"|"$/g, "") : "";
             return obj;
           }, {})
         );
 
         const cleanedData = processAndCleanData(dataRows);
 
-        // Calculate date range from purchaseDate
         const purchaseDates = dataRows
           .map((row) => row["purchaseDate"])
-          .filter(
-            (date) => date && date !== "N/A" && !isNaN(new Date(date).getTime())
-          )
+          .filter((date) => date && date !== "N/A" && !isNaN(new Date(date).getTime()))
           .map((date) => new Date(date));
-        const validDates = purchaseDates.filter(
-          (date) => !isNaN(date.getTime())
-        );
-        const start =
-          validDates.length > 0 ? new Date(Math.min(...validDates)) : null;
-        const end =
-          validDates.length > 0 ? new Date(Math.max(...validDates)) : null;
-        const newDateRange = { start, end };
-        setDateRange(newDateRange);
+        const validDates = purchaseDates.filter((date) => !isNaN(date.getTime()));
+        const start = validDates.length > 0 ? new Date(Math.min(...validDates)) : null;
+        const end = validDates.length > 0 ? new Date(Math.max(...validDates)) : null;
+        setDateRange({ start, end });
 
-        setData(cleanedData);
+        setExcelData(cleanedData);
         localStorage.setItem(
-          "salesData",
+          "excelData",
           JSON.stringify({
             data: cleanedData,
             fileName: file.name,
-            dateRange: newDateRange,
+            dateRange: { start, end },
+            source: "file",
           })
         );
         setLoading(false);
@@ -165,46 +252,47 @@ const App = () => {
     }
   };
 
-  // Function to clear Local Storage
   const clearLocalStorage = () => {
-    localStorage.removeItem("salesData");
-    setData(null);
+    localStorage.removeItem("excelData");
+    setExcelData(null);
+    setGoogleSheetData(null);
     setError(null);
     setLoading(false);
     setStartDate("");
     setEndDate("");
-    setSearchQuery("");
+    setSelectedProduct("");
+    setSelectedCustomer("");
     setFileName("");
     setDateRange({ start: null, end: null });
+    setGoogleSheetDateRange({ start: null, end: null });
+    setDataSource("file");
+    setLastUpdated(null);
+    fetchGoogleSheetData();
   };
 
-  // Parse CSV data
   const parseCSV = (csvText) => {
     const rows = csvText.split(/\r?\n/);
-    return rows.map((row) =>
-      row.split(",").map((cell) => cell.trim().replace(/^"|"$/g, ""))
-    );
+    return rows.map((row) => row.split(",").map((cell) => cell.trim().replace(/^"|"$/g, "")));
   };
 
-  // Process and clean data
   const processAndCleanData = (rawData) => {
     const salesByCustomer = {};
     const quantityByProduct = {};
+    const quantityByProductWithCustomer = {};
     const salesByBranch = {};
-    const salesByBranchDaily = {}; // For daily sales trend
+    const salesByBranchDaily = {};
     const quantityPProducts = {};
+    const quantityPProductsWithCustomer = {};
     let totalQuantityPProducts = 0;
     const purchaseCodes = new Set();
+    const nonStockiestPurchaseCodes = new Set();
+    const purchaseTypeBreakdown = {};
 
     rawData.forEach((row) => {
-      if (
-        !row["memberLocalName"] ||
-        !row["branchTransactionCode"] ||
-        !row["purchaseCode"]
-      )
-        return;
+      if (!row["memberLocalName"] || !row["branchTransactionCode"] || !row["purchaseCode"]) return;
 
       const totalAmount = parseFloat(row["totalAmount"]) || 0;
+      const totalThisPrice = parseFloat(row["totalThisPrice"]) || 0;
       const orderCount = parseInt(row["orderCount"]) || 0;
       const customer = row["memberLocalName"];
       const memberId = row["memberId"] || "N/A";
@@ -215,58 +303,66 @@ const App = () => {
       const purchaseDate = row["purchaseDate"] || "N/A";
       const purchaseCode = row["purchaseCode"];
       const purchaseChannel = row["purchaseChannel"] || "N/A";
+      const purchaseType = row["purchaseType"] || "Unknown";
 
       purchaseCodes.add(purchaseCode);
+      if (!purchaseChannel.startsWith("STOCKIEST")) {
+        nonStockiestPurchaseCodes.add(purchaseCode);
+        purchaseTypeBreakdown[purchaseType] = purchaseTypeBreakdown[purchaseType] || new Set();
+        purchaseTypeBreakdown[purchaseType].add(purchaseCode);
+      }
 
       if (totalAmount > 0 && !purchaseChannel.startsWith("STOCKIEST")) {
-        if (!salesByCustomer[customer]) {
-          salesByCustomer[customer] = {
-            amount: 0,
-            date: purchaseDate,
-            memberIds: new Set(),
-          };
-        }
+        salesByCustomer[customer] = salesByCustomer[customer] || { amount: 0, date: purchaseDate, memberIds: new Set() };
         salesByCustomer[customer].amount += totalAmount;
-        if (memberId !== "N/A") {
-          salesByCustomer[customer].memberIds.add(memberId);
-        }
+        if (memberId !== "N/A") salesByCustomer[customer].memberIds.add(memberId);
       }
-      if (
-        orderCount > 0 &&
-        product !== "Unknown" &&
-        !productCode.startsWith("P") &&
-        !branchReceive.startsWith("KS")
-      ) {
-        if (!quantityByProduct[product])
-          quantityByProduct[product] = { quantity: 0, date: purchaseDate, productId: productCode };
+
+      if (orderCount > 0 && product !== "Unknown" && !productCode.startsWith("P") && !branchReceive.startsWith("KS")) {
+        quantityByProduct[product] = quantityByProduct[product] || { quantity: 0, totalPrice: 0, date: purchaseDate, productId: productCode };
         quantityByProduct[product].quantity += orderCount;
+        quantityByProduct[product].totalPrice += totalThisPrice;
+
+        quantityByProductWithCustomer[product] = quantityByProductWithCustomer[product] || {};
+        quantityByProductWithCustomer[product][customer] = quantityByProductWithCustomer[product][customer] || {
+          quantity: 0,
+          totalPrice: 0,
+          date: purchaseDate,
+          productId: productCode,
+        };
+        quantityByProductWithCustomer[product][customer].quantity += orderCount;
+        quantityByProductWithCustomer[product][customer].totalPrice += totalThisPrice;
       }
+
       if (totalAmount > 0) {
-        if (!salesByBranch[branch])
-          salesByBranch[branch] = { amount: 0, date: purchaseDate };
+        salesByBranch[branch] = salesByBranch[branch] || { amount: 0, date: purchaseDate };
         salesByBranch[branch].amount += totalAmount;
 
-        // For daily sales trend
         if (purchaseDate !== "N/A" && !isNaN(new Date(purchaseDate).getTime())) {
-          const dateKey = new Date(purchaseDate).toISOString().split("T")[0]; // Format as YYYY-MM-DD
-          if (!salesByBranchDaily[branch]) {
-            salesByBranchDaily[branch] = {};
-          }
-          if (!salesByBranchDaily[branch][dateKey]) {
-            salesByBranchDaily[branch][dateKey] = 0;
-          }
-          salesByBranchDaily[branch][dateKey] += totalAmount;
+          const dateKey = new Date(purchaseDate).toISOString().split("T")[0];
+          salesByBranchDaily[branch] = salesByBranchDaily[branch] || {};
+          salesByBranchDaily[branch][dateKey] = (salesByBranchDaily[branch][dateKey] || 0) + totalAmount;
         }
       }
+
       if (orderCount > 0 && productCode.startsWith("P")) {
-        if (!quantityPProducts[product])
-          quantityPProducts[product] = { quantity: 0, date: purchaseDate, productId: productCode };
+        quantityPProducts[product] = quantityPProducts[product] || { quantity: 0, totalPrice: 0, date: purchaseDate, productId: productCode };
         quantityPProducts[product].quantity += orderCount;
+        quantityPProducts[product].totalPrice += totalThisPrice;
         totalQuantityPProducts += orderCount;
+
+        quantityPProductsWithCustomer[product] = quantityPProductsWithCustomer[product] || {};
+        quantityPProductsWithCustomer[product][customer] = quantityPProductsWithCustomer[product][customer] || {
+          quantity: 0,
+          totalPrice: 0,
+          date: purchaseDate,
+          productId: productCode,
+        };
+        quantityPProductsWithCustomer[product][customer].quantity += orderCount;
+        quantityPProductsWithCustomer[product][customer].totalPrice += totalThisPrice;
       }
     });
 
-    // Transform salesByBranchDaily for chart
     const dailySalesData = [];
     const allDates = new Set();
     Object.values(salesByBranchDaily).forEach((branchData) => {
@@ -282,18 +378,26 @@ const App = () => {
       dailySalesData.push(entry);
     });
 
+    const purchaseTypeCounts = {};
+    Object.entries(purchaseTypeBreakdown).forEach(([type, codes]) => {
+      purchaseTypeCounts[type] = codes.size;
+    });
+
     return {
       salesByCustomer,
       quantityByProduct,
+      quantityByProductWithCustomer,
       salesByBranch,
       salesByBranchDaily: dailySalesData,
       totalQuantityPProducts,
       quantityPProducts,
+      quantityPProductsWithCustomer,
       purchaseCount: purchaseCodes.size,
+      nonStockiestPurchaseCount: nonStockiestPurchaseCodes.size,
+      purchaseTypeCounts,
     };
   };
 
-  // Filter data by date
   const filterByDate = (dataArray, start, end) => {
     if (!start || !end || !dataArray) return dataArray || [];
     return dataArray.filter((item) => {
@@ -305,45 +409,49 @@ const App = () => {
     });
   };
 
-  // Filter data by search query
-  const filterBySearch = (dataArray, query) => {
-    if (!query || !dataArray) return dataArray || [];
-    const searchField = dataArray[0]?.branch ? "branch" : "name";
-    return dataArray.filter((item) =>
-      item[searchField].toLowerCase().includes(query.toLowerCase())
-    );
+  const filterByProductAndCustomer = (dataObj, productQuery, customerQuery) => {
+    if (!dataObj) return [];
+
+    const result = [];
+    Object.entries(dataObj).forEach(([product, customers]) => {
+      if (productQuery && !product.toLowerCase().includes(productQuery.toLowerCase())) return;
+
+      Object.entries(customers).forEach(([customer, { quantity, totalPrice, date, productId }]) => {
+        if (customerQuery && !customer.toLowerCase().includes(customerQuery.toLowerCase())) return;
+
+        result.push({
+          name: product,
+          customer,
+          quantity: quantity || 0,
+          totalPrice: totalPrice ? totalPrice.toFixed(2) : "0.00",
+          date,
+          productId,
+        });
+      });
+    });
+
+    return result.sort((a, b) => b.quantity - a.quantity);
   };
 
-  // Format date for display
-  const formatDateForDisplay = (dateString) => {
-    if (dateString === "N/A") return "N/A";
-    const date = new Date(dateString);
-    return date.toISOString().split("T")[0]; // Display as YYYY-MM-DD
-  };
-
-  // Format date range for display
   const formatDateRange = (range) => {
-    if (
-      !range.start ||
-      !range.end ||
-      !(range.start instanceof Date) ||
-      !(range.end instanceof Date) ||
-      isNaN(range.start.getTime()) ||
-      isNaN(range.end.getTime())
-    ) {
+    if (!range.start || !range.end || isNaN(range.start.getTime()) || isNaN(range.end.getTime())) {
       return "N/A";
     }
-    const start = range.start.toISOString().split("T")[0];
-    const end = range.end.toISOString().split("T")[0];
+    const start = range.start.toLocaleDateString("en-GB");
+    const end = range.end.toLocaleDateString("en-GB");
     return `${start} - ${end}`;
   };
 
-  // If no data, show file upload screen
-  if (!data) {
+  const formatLastUpdated = (date) => {
+    if (!date) return "Never";
+    return format(date, "dd/MM/yyyy HH:mm");
+  };
+
+  if (!excelData && !googleSheetData) {
     return (
-      <div className="flex ">
-        <div className="sidebar">
-          <img src={scm_log} width={170} alt="logo" className="mb-5 pl-3" />
+      <div className="flex">
+        <div className="sidebar relative">
+          <img src="/SCM-Logo.png" width={170} alt="logo" className="mb-5 pl-3" />
           <ul>
             {menuItems.map((menu) => (
               <li
@@ -357,171 +465,155 @@ const App = () => {
                 {menu === "Products Promotion" && <FaTags size={20} className="inline mr-2" />}
                 {menu === "Sales by Branch" && <FaBuilding size={20} className="inline mr-2" />}
                 {menu === "Sales by Stockiest Branch" && <FaWarehouse size={20} className="inline mr-2" />}
+                {menu === "Google Sheets Data" && <FaFileDownload size={20} className="inline mr-2" />}
                 {menu}
               </li>
             ))}
           </ul>
-        </div>
-        {/* Header */}
-        <div className="content flex-1 ">
-          <div className="header bg-gradient-to-r from-blue-900 to-blue-500 text-white p-6 rounded-t-lg text-center ">
-            <h1 className="text-4xl font-bold">Sales Report</h1>
+          <div className="absolute px-2 bottom-2 w-full">
+            <p className="w-full py-4 px-4 border rounded-md text-gray-700 bg-gray-50 border-gray-200 font-light">
+              © Copyright by <span className="font-semibold">RON PHEAROM</span>
+            </p>
           </div>
-          <div className="upload-section bg-white p-6 rounded-b-lg shadow-lg mb-8 text-center border border-gray-300">
-            <h2 className="text-2xl font-semibold text-blue-700 mb-4">
-              Upload File to View Report
-            </h2>
-            <div className="flex justify-between items-center border-2 p-10 rounded-md  border-dotted border-gray-500">
-              <div className="flex justify-center items-center gap-1">
-                <FaFileExcel size={35} className="text-green-700" />
-                <input
-                  type="file"
-                  accept=".xlsx,.xls,.csv"
-                  className="upload-btn px-4 py-2 2/12 border border-green-700 text-green-700 rounded hover:bg-green-700 cursor-pointer hover:text-white"
-                  onChange={handleFileUpload}
-                />
-              </div>
-              <div className="flex justify-center items-center gap-2 text-gray-600">
-                <FaFileCsv size={25} />
-                <FaFileExcel size={25} /> <FaFileAlt size={25} />
-                <p>Support File : .xlsx,.xls,.csv</p>
-              </div>
-            </div>
-
-            {error && (
-              <p className="error text-red-600 text-lg mt-4">{error}</p>
-            )}
-            {loading && <p className="loading text-lg mt-4">Loading data...</p>}
+        </div>
+        <div className="content flex-1">
+          <div className="flex justify-center items-center h-[70vh]">
+            <div className="animate-spin rounded-full h-20 w-20 border-8 border-t-red-700 border-gray-200"></div>
           </div>
         </div>
       </div>
     );
   }
 
-  // Transform data for charts and tables
-  const customerData = data
+  const data = selectedMenu === "Google Sheets Data" ? googleSheetData : excelData;
+  const currentDateRange = selectedMenu === "Google Sheets Data" ? googleSheetDateRange : dateRange;
+
+  const customerData = data && data.salesByCustomer
     ? Object.entries(data.salesByCustomer)
       .map(([name, { amount, date, memberIds }]) => {
         const memberIdArray = Array.from(memberIds);
         let memberId = "N/A";
         let stockiestId = "N/A";
 
-        // Check for memberIds with letters and without letters
         memberIdArray.forEach((id) => {
           if (/[A-Za-z]/.test(id) && stockiestId === "N/A") {
-            stockiestId = id; // Assign ID with letters to stockiestId
+            stockiestId = id;
           } else if (!/[A-Za-z]/.test(id) && memberId === "N/A") {
-            memberId = id; // Assign ID without letters to memberId
+            memberId = id;
           }
         });
 
-        return {
-          name,
-          amount,
-          date,
-          memberId,
-          stockiestId,
-        };
+        return { name, amount, date, memberId, stockiestId };
       })
       .sort((a, b) => b.amount - a.amount)
     : [];
-  const productData = data
+
+  const uniqueCustomers = [...new Set(customerData.map((item) => item.name))].sort();
+  const uniqueProducts = data && data.quantityByProduct
+    ? [...new Set(Object.keys(data.quantityByProduct))].sort()
+    : [];
+  const uniquePProducts = data && data.quantityPProducts
+    ? [...new Set(Object.keys(data.quantityPProducts))].sort()
+    : [];
+
+  const productDataWithCustomer = data && data.quantityByProductWithCustomer
+    ? filterByDate(filterByProductAndCustomer(data.quantityByProductWithCustomer, selectedProduct, selectedCustomer), startDate, endDate)
+    : [];
+
+  const pProductDataWithCustomer = data && data.quantityPProductsWithCustomer
+    ? filterByDate(filterByProductAndCustomer(data.quantityPProductsWithCustomer, selectedProduct, selectedCustomer), startDate, endDate)
+    : [];
+
+  const productData = data && data.quantityByProduct
     ? Object.entries(data.quantityByProduct)
-      .map(([name, { quantity, date, productId }]) => ({ name, quantity, date, productId }))
+      .map(([name, { quantity, totalPrice, date, productId }]) => ({
+        name,
+        quantity,
+        totalPrice: totalPrice ? totalPrice.toFixed(2) : "0.00",
+        date,
+        productId,
+      }))
       .sort((a, b) => b.quantity - a.quantity)
     : [];
-  const pProductData = data
+
+  const pProductData = data && data.quantityPProducts
     ? Object.entries(data.quantityPProducts)
-      .map(([name, { quantity, date, productId }]) => ({ name, quantity, date, productId }))
+      .map(([name, { quantity, totalPrice, date, productId }]) => ({
+        name,
+        quantity,
+        totalPrice: totalPrice ? totalPrice.toFixed(2) : "0.00",
+        date,
+        productId,
+      }))
       .sort((a, b) => b.quantity - a.quantity)
     : [];
-  const branchData = data
+
+  const branchData = data && data.salesByBranch
     ? Object.entries(data.salesByBranch)
       .map(([branch, { amount, date }]) => ({ branch, amount, date }))
       .sort((a, b) => b.amount - a.amount)
     : [];
 
-  const customerTop10 = filterByDate(
-    filterBySearch(customerData, searchQuery),
-    startDate,
-    endDate
-  ).slice(0, 10);
-  const productTop10 = filterByDate(
-    filterBySearch(productData, searchQuery),
-    startDate,
-    endDate
-  ).slice(0, 10);
-  const pProductTop10 = filterByDate(
-    filterBySearch(pProductData, searchQuery),
+  const customerTop10 = filterByDate(customerData, startDate, endDate).slice(0, 10);
+  const productTop10 = productData.slice(0, 10);
+  const pProductTop10 = pProductData.slice(0, 10);
+  const googleSheetProductTop10 = filterByDate(
+    Object.entries(googleSheetData?.quantityByProduct || {})
+      .map(([name, { quantity, totalPrice, date, productId }]) => ({
+        name,
+        quantity,
+        totalPrice: totalPrice ? totalPrice.toFixed(2) : "0.00",
+        date,
+        productId,
+      }))
+      .sort((a, b) => b.quantity - a.quantity),
     startDate,
     endDate
   ).slice(0, 10);
   const branchTop10 = filterByDate(
-    filterBySearch(
-      branchData.filter(
-        (item) =>
-          item.branch.startsWith("PNH01") || item.branch.startsWith("KCM01")
-      ),
-      searchQuery
-    ),
+    branchData.filter((item) => item.branch.startsWith("PNH01") || item.branch.startsWith("KCM01")),
     startDate,
     endDate
   ).slice(0, 10);
   const stockiestBranchTop10 = filterByDate(
-    filterBySearch(
-      branchData.filter((item) => item.branch.startsWith("KS")),
-      searchQuery
-    ),
+    branchData.filter((item) => item.branch.startsWith("KS")),
     startDate,
     endDate
   ).slice(0, 10);
 
-  const customerAll = filterByDate(
-    filterBySearch(customerData, searchQuery),
-    startDate,
-    endDate
-  );
-  const productAll = filterByDate(
-    filterBySearch(productData, searchQuery),
-    startDate,
-    endDate
-  );
-  const pProductAll = filterByDate(
-    filterBySearch(pProductData, searchQuery),
+  const customerAll = filterByDate(customerData, startDate, endDate);
+  const productAll = productData;
+  const pProductAll = pProductData;
+  const googleSheetProductAll = filterByDate(
+    Object.entries(googleSheetData?.quantityByProduct || {})
+      .map(([name, { quantity, totalPrice, date, productId }]) => ({
+        name,
+        quantity,
+        totalPrice: totalPrice ? totalPrice.toFixed(2) : "0.00",
+        date,
+        productId,
+      }))
+      .sort((a, b) => b.quantity - a.quantity),
     startDate,
     endDate
   );
   const branchAll = filterByDate(
-    filterBySearch(
-      branchData.filter(
-        (item) =>
-          item.branch.startsWith("PNH01") || item.branch.startsWith("KCM01")
-      ),
-      searchQuery
-    ),
+    branchData.filter((item) => item.branch.startsWith("PNH01") || item.branch.startsWith("KCM01")),
     startDate,
     endDate
   );
   const stockiestBranchAll = filterByDate(
-    filterBySearch(
-      branchData.filter((item) => item.branch.startsWith("KS")),
-      searchQuery
-    ),
+    branchData.filter((item) => item.branch.startsWith("KS")),
     startDate,
     endDate
   );
 
-  const totalSales = data
+  const totalSales = data && data.salesByCustomer
     ? Object.values(data.salesByCustomer)
       .reduce((sum, val) => sum + val.amount, 0)
       .toFixed(2)
     : "0.00";
-  const topProduct =
-    data && productData.length > 0
-      ? productData[0]
-      : { name: "N/A", quantity: 0 };
 
-  // Calculate summaries for each menu
   const summaryData = {
     "Sales by Customer": {
       total: customerAll.reduce((sum, item) => sum + item.amount, 0).toFixed(2),
@@ -553,36 +645,27 @@ const App = () => {
       icon: <FaWarehouse size={30} className="text-teal-600" />,
       bgColor: "bg-teal-100",
     },
+    "Total Purchase Bills": {
+      total: data?.nonStockiestPurchaseCount || 0,
+      purchaseTypeCounts: data?.purchaseTypeCounts || {},
+      icon: <FaFileInvoice size={30} className="text-yellow-600" />,
+      bgColor: "bg-yellow-100",
+    },
   };
-
-  // Render content based on selected menu
 
   const renderContent = () => {
     let filteredDataGraph = [];
     let filteredDataTable = [];
+    let totalDataTable = [];
     switch (selectedMenu) {
       case "Summary":
         return (
           <div className="summary-section bg-white p-6 rounded-lg shadow-lg border border-gray-300">
             <div className="flex justify-between mb-4">
-              <h2 className="text-2xl font-semibold text-blue-700">Summary</h2>
-              {/* <div>
-                <input
-                  type="date"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                  className="mr-2 p-2 border rounded"
-                />
-                <input
-                  type="date"
-                  value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
-                  className="mr-2 p-2 border rounded"
-                />
-              </div> */}
+              <h2 className="text-2xl font-semibold text-gray-700">Summary</h2>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
-              {Object.entries(summaryData).map(([menu, { total, count, icon, bgColor }]) => (
+              {Object.entries(summaryData).map(([menu, { total, count, purchaseTypeCounts, icon, bgColor }]) => (
                 <div
                   key={menu}
                   className={`p-6 rounded-lg shadow-md ${bgColor} flex items-center space-x-4 transform transition-transform hover:scale-105 hover:shadow-lg`}
@@ -590,50 +673,47 @@ const App = () => {
                   <div>{icon}</div>
                   <div>
                     <h3 className="text-lg font-semibold text-gray-800">{menu}</h3>
-                    <p className="text-gray-600">
-                      {menu.includes("Sales") ? `Total Sales: $ ${total} USD` :
-                        menu === "Products Promotion" ? `Total Quantity: ${total} Sets` :
-                          `Total Quantity: ${total} units`}
-                    </p>
-                    <p className="text-gray-600">
-                      {menu === "Sales by Customer" ? "Member Counts :" :
-                        menu === "Quantity Sold by Product" ? "Product Items :" :
-                          menu === "Products Promotion" ? "Product Codes :" :
-                            menu === "Sales by Branch" ? "Branch :" :
-                              menu === "Sales by Stockiest Branch" ? "Stockiests :" : "Items :"} {count}
-                    </p>
+                    {menu === "Total Purchase Bills" ? (
+                      <div>
+                        <p className="text-gray-600">Total Non-Stockiest Bills: {total}</p>
+                        <div className="flex justify-between">
+                          {Object.entries(purchaseTypeCounts)
+                            .slice(0, 3)
+                            .map(([type, count]) => (
+                              <div key={type} className="text-gray-600 gap-2 px-2">
+                                {type}: {count}
+                              </div>
+                            ))}
+                          {Object.keys(purchaseTypeCounts).length > 3 && (
+                            <p className="text-gray-600">And more...</p>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <p className="text-gray-600">
+                          {menu.includes("Sales") ? `Total Sales: $ ${total} USD` : `Total Quantity: ${total} ${menu === "Products Promotion" ? "Sets" : "units"}`}
+                        </p>
+                        <p className="text-gray-600">
+                          {menu === "Sales by Customer"
+                            ? "Member Counts :"
+                            : menu === "Quantity Sold by Product"
+                              ? "Product Items :"
+                              : menu === "Products Promotion"
+                                ? "Product Codes :"
+                                : menu === "Sales by Branch"
+                                  ? "Branch :"
+                                  : menu === "Sales by Stockiest Branch"
+                                    ? "Stockiests :"
+                                    : "Items :"}{" "}
+                          {count}
+                        </p>
+                      </>
+                    )}
                   </div>
                 </div>
               ))}
             </div>
-
-            {/* <p className="text-lg">
-              <strong>Total Sales:</strong> $ {totalSales} USD
-            </p>
-            <p className="text-lg">
-              <strong>Number of Purchases:</strong>{" "}
-              {data ? data.purchaseCount : 0}
-            </p>
-            <p className="text-lg">
-              <strong>Quantity of Products Starting with P:</strong>{" "}
-              {data ? data.totalQuantityPProducts : 0} units
-            </p>
-            <p className="text-lg">
-              <strong>Interesting Fact:</strong> The best-selling product is "
-              {topProduct.name}" with {topProduct.quantity} units sold,
-              indicating high popularity.
-            </p>
-            <p className="text-lg">
-              Sales data for May 24, 2025, shows strong performance across
-              multiple branches, with significant contributions from major
-              customers and top products. The best-selling product is "
-              {topProduct.name}", indicating high popularity, possibly due to
-              high PV value or special promotions. Products starting with "P"
-              have a total sales quantity of{" "}
-              {data ? data.totalQuantityPProducts : 0} units, highlighting their
-              importance in the product category. Branches such as PNH01 and
-              KS003 have high sales, indicating key market areas.
-            </p> */}
           </div>
         );
       case "Sales by Customer":
@@ -642,35 +722,28 @@ const App = () => {
         return (
           <div className="section bg-white p-6 rounded-lg shadow-lg mb-8 border border-gray-300">
             <div className="flex justify-between mb-4">
-              <h2 className="text-2xl font-semibold text-gray-800">
-                Sales by Customer : Top 10
-              </h2>
-              <div>
-                <input
-                  type="text"
-                  placeholder="Search customers..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="p-2 border rounded"
-                />
-              </div>
+              <h2 className="text-2xl font-semibold text-gray-700">Sales by Customer: Top 10</h2>
+              {/* <div>
+                <select
+                  value={selectedCustomer}
+                  onChange={(e) => setSelectedCustomer(e.target.value)}
+                  className="p-2 border rounded bg-white text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-green-500"
+                >
+                  <option value="">Select customer...</option>
+                  {uniqueCustomers.map((customer) => (
+                    <option key={customer} value={customer}>
+                      {customer}
+                    </option>
+                  ))}
+                </select>
+              </div> */}
             </div>
             <ResponsiveContainer width="100%" height={400}>
               <BarChart data={filteredDataGraph}>
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis
-                  dataKey="name"
-                  angle={-45}
-                  textAnchor="end"
-                  fontSize={12}
-                />
+                <XAxis dataKey="name" angle={-45} textAnchor="end" fontSize={12} />
                 <YAxis
-                  label={{
-                    value: "Sales (USD)",
-                    angle: -90,
-                    position: "insideLeft",
-                    fontSize: 12,
-                  }}
+                  label={{ value: "Sales (USD)", angle: -90, position: "insideLeft", fontSize: 12 }}
                   fontSize={12}
                 />
                 <Tooltip formatter={(value) => `$ ${value.toFixed(2)}`} />
@@ -682,7 +755,7 @@ const App = () => {
               <div>
                 <div className="scroll-table">
                   <table>
-                    <thead>
+                    <thead className="customer">
                       <tr>
                         <th>Member ID</th>
                         <th>Stockiest ID</th>
@@ -702,176 +775,262 @@ const App = () => {
                     </tbody>
                   </table>
                 </div>
-                <p className="mt-4 font-semibold text-xl">
-                  Member Total : {filteredDataTable.length} ID
-                </p>
+                <p className="mt-4 font-semibold text-xl">Member Total: {filteredDataTable.length} ID</p>
               </div>
             )}
           </div>
         );
       case "Quantity Sold by Product":
         filteredDataGraph = productTop10;
-        filteredDataTable = productAll;
+        filteredDataTable = productDataWithCustomer;
+        totalDataTable = productAll;
         return (
           <div className="section bg-white p-6 rounded-lg shadow-lg mb-8 border border-gray-300">
-            <div className="flex justify-between mb-4">
-              <h2 className="text-2xl font-semibold text-gray-800">
-                Quantity Sold by Product : Top 10
+            <div className="flex flex-col mb-4 space-y-4">
+              <h2 className="text-2xl font-semibold text-gray-700">
+                Quantity Sold by Product: Top 10 <span className="text-red-600">(Not including promotions)</span>
               </h2>
-              <div>
-                <input
-                  type="text"
-                  placeholder="Search products..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="p-2 border rounded"
-                />
+              <div className="flex gap-4">
+                <select
+                  value={selectedProduct}
+                  onChange={(e) => setSelectedProduct(e.target.value)}
+                  className="p-2 border rounded bg-white text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-green-500"
+                >
+                  <option value="">Select product...</option>
+                  {uniqueProducts.map((product) => (
+                    <option key={product} value={product}>
+                      {product}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={selectedCustomer}
+                  onChange={(e) => setSelectedCustomer(e.target.value)}
+                  className="p-2 border rounded bg-white text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-green-500"
+                >
+                  <option value="">Select customer...</option>
+                  {uniqueCustomers.map((customer) => (
+                    <option key={customer} value={customer}>
+                      {customer}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
             <ResponsiveContainer width="100%" height={400}>
               <BarChart data={filteredDataGraph}>
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis
-                  dataKey="name"
-                  angle={-45}
-                  textAnchor="end"
-                  fontSize={12}
-                />
+                <XAxis dataKey="name" angle={-45} textAnchor="end" fontSize={12} />
                 <YAxis
-                  label={{
-                    value: "Quantity",
-                    angle: -90,
-                    position: "insideLeft",
-                    fontSize: 12,
-                  }}
+                  label={{ value: "Quantity", angle: -90, position: "insideLeft", fontSize: 12 }}
                   fontSize={12}
                 />
-                <Tooltip />
+                <Tooltip formatter={(value) => (typeof value === "number" ? value : parseInt(value) || 0)} />
                 <Legend />
                 <Bar dataKey="quantity" fill="#10B981" name="Quantity" />
               </BarChart>
             </ResponsiveContainer>
-            {productData.length > 0 && (
+            {productDataWithCustomer.length > 0 ? (
               <div>
+                <h3 className="text-xl font-semibold text-gray-700 mt-4">Filtered Results</h3>
                 <div className="scroll-table">
                   <table>
-                    <thead>
+                    <thead className="sold-product">
                       <tr>
                         <th>Product ID</th>
                         <th>Product</th>
+                        <th>Customer</th>
                         <th>Quantity</th>
+                        <th>Total Price (USD)</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredDataTable.map((item) => (
-                        <tr key={item.name}>
+                      {filteredDataTable.map((item, index) => (
+                        <tr key={`${item.name}-${item.customer}-${index}`}>
                           <td>{item.productId}</td>
                           <td>{item.name}</td>
+                          <td>{item.customer}</td>
                           <td>{item.quantity}</td>
+                          <td>{item.totalPrice}</td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
-                <p className="mt-4 font-semibold text-xl">
-                  Products Items : {filteredDataTable.length} Items
-                </p>
+                <p className="mt-4 font-semibold text-xl">Filtered Items: {filteredDataTable.length} Entries</p>
+              </div>
+            ) : (<div>
+              <h3 className="text-xl font-semibold text-gray-700 mt-4">Filtered Results</h3>
+              <div className="scroll-table">
+                <table className="w-full">
+                  <thead className="sold-product">
+                    <tr>
+                      <th>Product ID</th>
+                      <th>Product</th>
+                      <th>Customer</th>
+                      <th>Quantity</th>
+                      <th>Total Price (USD)</th>
+                    </tr>
+                  </thead>
+                </table>
+                <div className="w-full justify-center items-center ">
+                  <div className=" bg-red-200 text-red-600 py-5 text-center">No data available for the selected filters.</div>
+                </div>
+              </div>
+              <p className="mt-4 font-semibold text-xl">Filtered Items: {filteredDataTable.length} Entries</p>
+            </div>)}
+            {totalDataTable.length > 0 && (
+              <div>
+                <h3 className="text-xl font-semibold text-gray-700 mt-6">Total Summary</h3>
+                <div className="scroll-table">
+                  <table>
+                    <thead className="sold-product">
+                      <tr>
+                        <th>Product ID</th>
+                        <th>Product</th>
+                        <th>Quantity</th>
+                        <th>Total Price (USD)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {totalDataTable.map((item, index) => (
+                        <tr key={`${item.name}-${index}`}>
+                          <td>{item.productId}</td>
+                          <td>{item.name}</td>
+                          <td>{item.quantity}</td>
+                          <td>{item.totalPrice}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <p className="mt-4 font-semibold text-xl">Total Items: {totalDataTable.length} Products</p>
               </div>
             )}
           </div>
         );
       case "Products Promotion":
         filteredDataGraph = pProductTop10;
-        filteredDataTable = pProductAll;
+        filteredDataTable = pProductDataWithCustomer;
+        totalDataTable = pProductAll;
         return (
           <div className="section bg-white p-6 rounded-lg shadow-lg mb-8 border border-gray-300">
-            <div className="flex justify-between mb-4">
-              <h2 className="text-2xl font-semibold text-gray-800">
-                Quantity of Products Promotion Top 5
-              </h2>
-              <div>
-                <input
-                  type="text"
-                  placeholder="Search products..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="p-2 border rounded"
-                />
+            <div className="flex flex-col space-y-4 mb-4">
+              <h2 className="text-2xl font-semibold text-gray-700">Quantity of Products Promotion Top 10</h2>
+              <div className="flex gap-4">
+                <select
+                  value={selectedProduct}
+                  onChange={(e) => setSelectedProduct(e.target.value)}
+                  className="p-2 border rounded bg-white text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-green-500"
+                >
+                  <option value="">Select product...</option>
+                  {uniquePProducts.map((product) => (
+                    <option key={product} value={product}>
+                      {product}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={selectedCustomer}
+                  onChange={(e) => setSelectedCustomer(e.target.value)}
+                  className="p-2 border rounded bg-white text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-green-500"
+                >
+                  <option value="">Select customer...</option>
+                  {uniqueCustomers.map((customer) => (
+                    <option key={customer} value={customer}>
+                      {customer}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
             <ResponsiveContainer width="100%" height={400}>
               <BarChart data={filteredDataGraph}>
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis
-                  dataKey="name"
-                  angle={-45}
-                  textAnchor="end"
-                  fontSize={12}
-                />
+                <XAxis dataKey="name" angle={-45} textAnchor="end" fontSize={12} />
                 <YAxis
-                  label={{
-                    value: "Quantity",
-                    angle: -90,
-                    position: "insideLeft",
-                    fontSize: 12,
-                  }}
+                  label={{ value: "Quantity", angle: -90, position: "insideLeft", fontSize: 12 }}
                   fontSize={12}
                 />
-                <Tooltip />
+                <Tooltip formatter={(value) => (typeof value === "number" ? value : parseInt(value) || 0)} />
                 <Legend />
                 <Bar dataKey="quantity" fill="#F97316" name="Quantity" />
               </BarChart>
             </ResponsiveContainer>
-            {pProductData.length > 0 && (
+            {pProductDataWithCustomer.length > 0 && (
               <div>
+                <h3 className="text-xl font-semibold text-gray-700 mt-4">Filtered Results</h3>
                 <div className="scroll-table">
                   <table>
-                    <thead>
+                    <thead className="promotion">
                       <tr>
                         <th>Product ID</th>
                         <th>Product</th>
-                        <th>Quantity</th>
+                        <th>Customer</th>
+                        <th>Sets</th>
+                        <th>Total Price (USD)</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredDataTable.map((item) => (
-                        <tr key={item.name}>
+                      {filteredDataTable.map((item, index) => (
+                        <tr key={`${item.name}-${item.customer}-${index}`}>
                           <td>{item.productId}</td>
                           <td>{item.name}</td>
+                          <td>{item.customer}</td>
                           <td>{item.quantity}</td>
+                          <td>{item.totalPrice}</td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
-                <p className="mt-4 font-semibold text-xl">
-                  Promotion Items : {filteredDataTable.length} Items
-                </p>
+                <p className="mt-4 font-semibold text-xl">Filtered Items: {filteredDataTable.length} Entries</p>
+              </div>
+            )}
+            {totalDataTable.length > 0 && (
+              <div>
+                <h3 className="text-xl font-semibold text-gray-700 mt-6">Total Summary</h3>
+                <div className="scroll-table">
+                  <table>
+                    <thead className="promotion">
+                      <tr>
+                        <th>Product ID</th>
+                        <th>Product</th>
+                        <th>Sets</th>
+                        <th>Total Price (USD)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {totalDataTable.map((item, index) => (
+                        <tr key={`${item.name}-${index}`}>
+                          <td>{item.productId}</td>
+                          <td>{item.name}</td>
+                          <td>{item.quantity}</td>
+                          <td>{item.totalPrice}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <p className="mt-4 font-semibold text-xl">Total Items: {totalDataTable.length} Products</p>
               </div>
             )}
           </div>
         );
       case "Sales by Branch":
-        filteredDataGraph = data.salesByBranchDaily;
+        filteredDataGraph = data?.salesByBranchDaily || [];
         filteredDataTable = branchAll;
 
-        // Filter branches for PNH01 and KCM01
         const filteredGraphData = filterByDate(
-          filterBySearch(
-            filteredDataGraph.map((item) => {
-              const filteredItem = { date: item.date };
-              Object.keys(item).forEach((key) => {
-                if (
-                  key !== "date" &&
-                  (key.startsWith("PNH01") || key.startsWith("KCM01"))
-                ) {
-                  filteredItem[key] = item[key];
-                }
-              });
-              return filteredItem;
-            }),
-            searchQuery
-          ),
+          filteredDataGraph.map((item) => {
+            const filteredItem = { date: item.date };
+            Object.keys(item).forEach((key) => {
+              if (key !== "date" && (key.startsWith("PNH01") || key.startsWith("KCM01"))) {
+                filteredItem[key] = item[key];
+              }
+            });
+            return filteredItem;
+          }),
           startDate,
           endDate
         );
@@ -879,18 +1038,21 @@ const App = () => {
         return (
           <div className="section bg-white p-6 rounded-lg shadow-lg mb-8 border border-gray-300">
             <div className="flex justify-between mb-4">
-              <h2 className="text-2xl font-semibold text-gray-800">
-                Daily Sales Trend by Branch
-              </h2>
-              <div>
-                <input
-                  type="text"
-                  placeholder="Search branches..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="p-2 border rounded"
-                />
-              </div>
+              <h2 className="text-2xl font-semibold text-gray-700">Daily Sales Trend by Branch</h2>
+              {/* <div>
+                <select
+                  value={selectedCustomer}
+                  onChange={(e) => setSelectedCustomer(e.target.value)}
+                  className="p-2 border rounded bg-white text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-green-500"
+                >
+                  <option value="">Select branch...</option>
+                  {[...new Set(branchData.map((item) => item.branch))].sort().map((branch) => (
+                    <option key={branch} value={branch}>
+                      {branch}
+                    </option>
+                  ))}
+                </select>
+              </div> */}
             </div>
             <ResponsiveContainer width="100%" height={400}>
               <LineChart data={filteredGraphData}>
@@ -925,7 +1087,7 @@ const App = () => {
             {branchData.length > 0 && (
               <div className="scroll-table">
                 <table>
-                  <thead>
+                  <thead className="branch">
                     <tr>
                       <th>Branch</th>
                       <th>Sales (USD)</th>
@@ -950,42 +1112,28 @@ const App = () => {
         return (
           <div className="section bg-white p-6 rounded-lg shadow-lg mb-8 border border-gray-300">
             <div className="flex justify-between mb-4">
-              <h2 className="text-2xl font-semibold text-gray-800">
-                Sales by Stockiest Branch
-              </h2>
-              <div>
-                {/* <input
-                  type="date"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                  className="mr-2 p-2 border rounded"
-                />
-                <input
-                  type="date"
-                  value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
-                  className="mr-2 p-2 border rounded"
-                /> */}
-                <input
-                  type="text"
-                  placeholder="Search branches..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="p-2 border rounded"
-                />
-              </div>
+              <h2 className="text-2xl font-semibold text-gray-700">Sales by Stockiest Branch</h2>
+              {/* <div>
+                <select
+                  value={selectedCustomer}
+                  onChange={(e) => setSelectedCustomer(e.target.value)}
+                  className="p-2 border rounded bg-white text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-green-500"
+                >
+                  <option value="">Select branch...</option>
+                  {[...new Set(branchData.map((item) => item.branch))].sort().map((branch) => (
+                    <option key={branch} value={branch}>
+                      {branch}
+                    </option>
+                  ))}
+                </select>
+              </div> */}
             </div>
             <ResponsiveContainer width="100%" height={400}>
               <BarChart data={filteredDataGraph}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="branch" fontSize={12} />
                 <YAxis
-                  label={{
-                    value: "Sales (USD)",
-                    angle: -90,
-                    position: "insideLeft",
-                    fontSize: 12,
-                  }}
+                  label={{ value: "Sales (USD)", angle: -90, position: "insideLeft", fontSize: 12 }}
                   fontSize={12}
                 />
                 <Tooltip formatter={(value) => `$ ${value.toFixed(2)}`} />
@@ -996,11 +1144,10 @@ const App = () => {
             {branchData.length > 0 && (
               <div className="scroll-table">
                 <table>
-                  <thead>
+                  <thead className="stockiest">
                     <tr>
                       <th>Branch</th>
                       <th>Sales (USD)</th>
-                      {/* <th>Date</th> */}
                     </tr>
                   </thead>
                   <tbody>
@@ -1008,11 +1155,84 @@ const App = () => {
                       <tr key={item.branch}>
                         <td>{item.branch}</td>
                         <td>{item.amount.toFixed(2)}</td>
-                        {/* <td>{formatDateForDisplay(item.date)}</td> */}
                       </tr>
                     ))}
                   </tbody>
                 </table>
+              </div>
+            )}
+          </div>
+        );
+      case "Google Sheets Data":
+        filteredDataGraph = googleSheetProductTop10;
+        filteredDataTable = googleSheetProductAll;
+        return (
+          <div className="section bg-white p-6 rounded-lg shadow-lg mb-8 border border-gray-300">
+            <div className="flex justify-between mb-4">
+              <h2 className="text-2xl font-semibold text-gray-700">All Quantity <span className="text-green-800">(includes promotions)</span></h2>
+              <div className="flex items-center gap-4">
+                <p className="text-gray-600">Date Range: <span className="font-semibold">{formatDateRange(googleSheetDateRange)}</span></p>
+                <button
+                  onClick={fetchGoogleSheetData}
+                  className="flex items-center gap-1 px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 cursor-pointer"
+                >
+                  <FaSyncAlt size={16} />
+                  Refresh Data
+                </button>
+                {/* <select
+                  value={selectedProduct}
+                  onChange={(e) => setSelectedProduct(e.target.value)}
+                  className="p-2 border rounded bg-white text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-green-500"
+                >
+                  <option value="">Select product...</option>
+                  {uniqueProducts.map((product) => (
+                    <option key={product} value={product}>
+                      {product}
+                    </option>
+                  ))}
+                </select> */}
+              </div>
+            </div>
+            {filteredDataGraph.length === 0 ? (
+              <p className="text-center text-gray-600">No data available</p>
+            ) : (
+              <ResponsiveContainer width="100%" height={400}>
+                <BarChart data={filteredDataGraph}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="name" angle={-45} textAnchor="end" fontSize={12} />
+                  <YAxis
+                    label={{ value: "Quantity", angle: -90, position: "insideLeft", fontSize: 12 }}
+                    fontSize={12}
+                  />
+                  <Tooltip formatter={(value) => (typeof value === "number" ? value : parseInt(value) || 0)} />
+                  <Legend />
+                  <Bar dataKey="quantity" fill="#4B0082" name="Quantity" />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+            {googleSheetProductAll.length > 0 && (
+              <div>
+                <div className="scroll-table">
+                  <table>
+                    <thead className="google-sheet">
+                      <tr>
+                        <th>Product ID</th>
+                        <th>Product</th>
+                        <th>Quantity</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredDataTable.map((item) => (
+                        <tr key={item.name}>
+                          <td>{item.productId}</td>
+                          <td>{item.name}</td>
+                          <td>{item.quantity}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <p className="mt-4 font-semibold text-xl">Product Items: {filteredDataTable.length} Items</p>
               </div>
             )}
           </div>
@@ -1024,8 +1244,8 @@ const App = () => {
 
   return (
     <div className="flex">
-      <div className="sidebar">
-        <img src={scm_log} width={170} alt="logo" className="mb-5 pl-3" />
+      <div className="sidebar relative">
+        <img src="/SCM-Logo.png" width={170} alt="logo" className="mb-5 pl-3" />
         <ul>
           {menuItems.map((menu) => (
             <li
@@ -1039,47 +1259,53 @@ const App = () => {
               {menu === "Products Promotion" && <FaTags size={20} className="inline mr-2" />}
               {menu === "Sales by Branch" && <FaBuilding size={20} className="inline mr-2" />}
               {menu === "Sales by Stockiest Branch" && <FaWarehouse size={20} className="inline mr-2" />}
+              {menu === "Google Sheets Data" && <FaFileDownload size={20} className="inline mr-2" />}
               {menu}
             </li>
           ))}
         </ul>
+        <div className="absolute px-2 bottom-2 w-full">
+          <p className="w-full py-4 px-4 border rounded-md text-gray-700 bg-gray-50 border-gray-200 font-light">
+            © Copyright by <span className="font-semibold">RON PHEAROM</span>
+          </p>
+        </div>
       </div>
       <div className="content flex-1">
-
-
         <div className="upload-section bg-white p-6 rounded-lg shadow-lg mb-8 text-center justify-between flex gap-4 border border-gray-300">
           <div className="flex gap-2">
             <div className="flex justify-center items-center gap-1">
-              <FaFileExcel size={35} className="text-green-700" />
-              <input
-                type="file"
-                accept=".xlsx,.xls,.csv"
-                className="upload-btn px-4 py-2 2/12 border border-green-700 text-green-700 rounded hover:bg-green-700 cursor-pointer hover:text-white"
-                onChange={handleFileUpload}
-              />
+              <label className="flex justify-center items-center gap-1 hover:cursor-pointer">
+                <FaFileExcel size={36} className="text-green-700" />
+                <p className="font-kantumruy md:text-[1rem] lg:text-[1.1rem] border border-green-700 py-2 px-3 transition-all duration-200 rounded hover:bg-green-700 tra hover:text-white text-green-700 font-medium">
+                  ចុចត្រង់នេះដើម្បី Upload File
+                </p>
+                <input
+                  type="file"
+                  accept=".xlsx,.xls,.csv"
+                  className="upload-btn px-4 hidden py-2 border border-green-700 rounded text-green-700 cursor-pointer hover:text-white"
+                  onChange={handleFileUpload}
+                />
+              </label>
             </div>
             <button
               onClick={clearLocalStorage}
-              className="clear-btn px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 cursor-pointer"
+              className="clear-btn px-3 py-2 bg-red-600 text-white rounded hover:bg-red-700 cursor-pointer"
             >
               Clear Data
             </button>
           </div>
-
-          <div className="header bg-gradient-to-r from-blue-900 to-blue-500 text-white rounded text-center space-y-2">
-            {/* <h1 className="text-xl font-bold">Sales Report</h1> */}
-            <div className="text flex space-y-1 justify-center gap-2 p-2">
-              <div>
-                <strong>File Name :</strong> {fileName || "N/A"} |{" "}
-              </div>
-              <div>
-                <strong>Date Range:</strong> {formatDateRange(dateRange)}
+          <div className="header bg-gradient-to-r lg:text-[12px] from-green-700 to-green-500 py-2 px-3 text-white rounded flex items-center justify-center">
+            <div>
+              <div className="flex gap-2">
+                <p>
+                  Date Range: <span className="font-semibold">{formatDateRange(currentDateRange)}</span>
+                </p>
               </div>
             </div>
           </div>
-
-
         </div>
+        {error && <p className="error text-red-600 text-lg mb-4 text-center">{error}</p>}
+        {loading && <p className="loading text-lg mb-4 text-center">Loading data...</p>}
         {renderContent()}
       </div>
     </div>

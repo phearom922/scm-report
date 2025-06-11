@@ -54,7 +54,7 @@ const App = () => {
       const parsedData = Papa.parse(csvText, { header: true, skipEmptyLines: true });
       console.log("Parsed Data:", parsedData.data);
 
-      if (!parsedData.data || parsedData.data.length === 0) {
+      if (!parsedData.data || parsedData.data.length === 0.00) {
         throw new Error("No data found in Google Sheet");
       }
 
@@ -132,7 +132,8 @@ const App = () => {
       const date = row["purchaseDate"];
       const productCode = row["productCode"] || "N/A";
 
-      if (quantity > 0) {
+      // กรองสินค้าที่ Total Price = 0
+      if (quantity > 0 && totalPrice > 0) {
         quantityByProduct[product] = quantityByProduct[product] || {
           quantity: 0,
           totalPrice: 0,
@@ -319,19 +320,22 @@ const App = () => {
       }
 
       if (orderCount > 0 && product !== "Unknown" && !productCode.startsWith("P") && !branchReceive.startsWith("KS")) {
-        quantityByProduct[product] = quantityByProduct[product] || { quantity: 0, totalPrice: 0, date: purchaseDate, productId: productCode };
-        quantityByProduct[product].quantity += orderCount;
-        quantityByProduct[product].totalPrice += totalThisPrice;
+        // กรองสินค้าที่ Total Price = 0
+        if (totalThisPrice > 0) {
+          quantityByProduct[product] = quantityByProduct[product] || { quantity: 0, totalPrice: 0, date: purchaseDate, productId: productCode };
+          quantityByProduct[product].quantity += orderCount;
+          quantityByProduct[product].totalPrice += totalThisPrice;
 
-        quantityByProductWithCustomer[product] = quantityByProductWithCustomer[product] || {};
-        quantityByProductWithCustomer[product][customer] = quantityByProductWithCustomer[product][customer] || {
-          quantity: 0,
-          totalPrice: 0,
-          date: purchaseDate,
-          productId: productCode,
-        };
-        quantityByProductWithCustomer[product][customer].quantity += orderCount;
-        quantityByProductWithCustomer[product][customer].totalPrice += totalThisPrice;
+          quantityByProductWithCustomer[product] = quantityByProductWithCustomer[product] || {};
+          quantityByProductWithCustomer[product][customer] = quantityByProductWithCustomer[product][customer] || {
+            quantity: 0,
+            totalPrice: 0,
+            date: purchaseDate,
+            productId: productCode,
+          };
+          quantityByProductWithCustomer[product][customer].quantity += orderCount;
+          quantityByProductWithCustomer[product][customer].totalPrice += totalThisPrice;
+        }
       }
 
       if (totalAmount > 0) {
@@ -698,14 +702,14 @@ const App = () => {
                           {menu === "Sales by Customer"
                             ? "Member Counts :"
                             : menu === "Quantity Sold by Product"
-                              ? "Product Items :"
-                              : menu === "Products Promotion"
-                                ? "Product Codes :"
-                                : menu === "Sales by Branch"
-                                  ? "Branch :"
-                                  : menu === "Sales by Stockiest Branch"
-                                    ? "Stockiests :"
-                                    : "Items :"}{" "}
+                            ? "Product Items :"
+                            : menu === "Products Promotion"
+                            ? "Product Codes :"
+                            : menu === "Sales by Branch"
+                            ? "Branch :"
+                            : menu === "Sales by Stockiest Branch"
+                            ? "Stockiests :"
+                            : "Items :"}{" "}
                           {count}
                         </p>
                       </>
