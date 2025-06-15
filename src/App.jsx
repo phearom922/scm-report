@@ -155,7 +155,7 @@ const App = () => {
     "Products Promotion",
     "Sales by Branch",
     "Sales by Stockiest Branch",
-    "Google Sheets Data",
+    // "Google Sheets Data",
   ];
 
   const handleFileUpload = (event) => {
@@ -1263,7 +1263,9 @@ const App = () => {
               {menu === "Products Promotion" && <FaTags size={20} className="inline mr-2" />}
               {menu === "Sales by Branch" && <FaBuilding size={20} className="inline mr-2" />}
               {menu === "Sales by Stockiest Branch" && <FaWarehouse size={20} className="inline mr-2" />}
+
               {menu === "Google Sheets Data" && <FaFileDownload size={20} className="inline mr-2" />}
+              
               {menu}
             </li>
           ))}
